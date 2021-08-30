@@ -133,6 +133,13 @@ function reverse_table(t)
     return o
 end
 
+-- dirty table trick
+-- creates a new empty table. use with init(f).
+function empty(_)
+    local t = {}
+    return t
+end
+
 -- CONSTS --
 
 -- Color: 1 is white, 2 is black
@@ -550,14 +557,14 @@ function Move.to_algebraic(m)
     return ""
 end
 
--- Chess --
+-- 8x8 Box --
 
-chess = {}
+Box = {}
 
-chess.mt = {
+Box.mt = {
     __index = function (b, pos)
         if Pos.is_pos(pos) then
-            return b[index(pos)]
+            return rawget(b, index(pos))
         else
             assert(false, "not a valid index")
         end
@@ -565,12 +572,30 @@ chess.mt = {
 
     __newindex = function(b, pos, v)
         if Pos.is_pos(pos) then
-            b[index(pos)] = v
+            rawset(b, index(pos), v)
         else
             assert(false, "not a valid index")
         end
     end
 }
+
+function Box.make(default)
+    local b = {}
+    for i = 1, 64 do b[i] = default end
+    setmetatable(b, Box.mt)
+    return b
+end
+
+function Box.init(f)
+    local b = {}
+    for i = 1, 64 do b[i] = f(i) end
+    setmetatable(b, Box.mt)
+    return b
+end
+
+-- Chess --
+
+chess = {}
 
 -- reset states
 function chess:reset()
@@ -579,36 +604,31 @@ function chess:reset()
 
     -- board and position of king
     local function make_board(colors, pieces)
-        local b = {}
+        local b = Box.make(Piece.none)
         for i, s in ipairs(colors) do
-            b[i] = Piece.make(s, pieces[i])
+            rawset(b, i, Piece.make(s, pieces[i]))
         end
-        setmetatable(b, self.mt)
         return b
     end
 
     self.board = make_board(BCOLOR, BCLASS)
-    self.king_pos = {Pos.make(1, 5), Pos.make(8, 5)}
+    self.king_pos = { Pos.make(1, E), Pos.make(8, E) }
 
     -- rights
-    self.castling_right = {{true, true}, {true, true}}
+    self.castling_right = { {true, true}, {true, true} }
     self.dpush_file = {0, 0} -- double push file
 
     self.captured = {} -- captured pieces
     self.log = {} -- move log
 
     -- initialize attack map of opponent (empty for now)
-    self.attacked = {{}, {}}
-    for s = 1, 2 do
-        for i = 1, 64 do self.attacked[s][i] = {} end
-    end
+    self.attacked = { Box.init(empty), Box.init(empty) }
 end
 
 -- end current side's turn
 function chess:end_turn()
     -- update attack map
     local am = self:gen_attack(self.side)
-    setmetatable(am, self.mt)
     self.attacked[OPPONENT[self.side]] = am
     self.dpush_file[OPPONENT[self.side]] = 0 -- clear en passant right
 
@@ -703,7 +723,7 @@ function chess:is_pseudo_legal(m)
 end
 
 function chess:is_checked(side)
-    return #self.attacked[side][index(self.king_pos[side])] > 0
+    return #self.attacked[side][self.king_pos[side]] > 0
 end
 
 -- chess:is_legal(move) returns true if the move is legal.
@@ -714,7 +734,7 @@ function chess:is_legal(move)
     -- check one can uncheck by move a piece to dst.
     local function is_uncheck(side, dst)
         local kpos = self.king_pos[side]
-        local atks = self.attacked[side][index(kpos)]
+        local atks = self.attacked[side][kpos]
 
         for _, atk in ipairs(atks) do
             if Pos.is_lined(atk, dst, kpos) -- blocks ray
@@ -727,7 +747,7 @@ function chess:is_legal(move)
 
     -- check piece is (absolutely) pinned.
     local function is_pinned(side, pos)
-        local atks = self.attacked[side][index(pos)]
+        local atks = self.attacked[side][pos]
         return exists(
             function (atk) return self:is_pinned(side, pos, atk) end,
             atks)
@@ -757,7 +777,7 @@ function chess:is_legal(move)
         if Pos.in_bound(move.dst)
             and (self:is_empty(move.dst) or self:can_capture(move.dst, color)) then
             if Piece.class(move.piece) == KING then -- king can move to uncontrolled square
-                return #self.attacked[color][index(move.dst)] == 0
+                return #self.attacked[color][move.dst] == 0
             elseif self:is_checked(color) then -- checked?
                 return is_uncheck(color, move.dst)
             else -- not checked; check pinned
@@ -778,7 +798,7 @@ function chess:is_legal(move)
 
         for f = KING_FILE + d, ROOK_FILE[move.side] - d, d do
             local sq = Pos.make(r, f)
-            if not self:is_empty(sq) or #self.attacked[color][index(sq)] > 0 then
+            if not self:is_empty(sq) or #self.attacked[color][sq] > 0 then
                 return false
             end
         end
@@ -807,7 +827,7 @@ end
 
 function chess:is_checkmated(side)
     local kpos = self.king_pos[side]
-    local atks = self.attacked[side][index(kpos)]
+    local atks = self.attacked[side][kpos]
 
     if #atks == 0 then
         return false
@@ -1029,9 +1049,7 @@ end
 -- map[i] = n means square i is being threatened by n adversary pieces.
 function chess:gen_attack(side) -- int -> Pos.t matrix
     -- initialize map
-    local map = {}
-    for i = 1, 64 do map[i] = {} end
-    setmetatable(map, self.mt)
+    local map = Box.init(empty)
 
     -- collect attacks
     for i, p in ipairs(self.board) do
@@ -1040,7 +1058,7 @@ function chess:gen_attack(side) -- int -> Pos.t matrix
         if Piece.side(p) == side then
             for _, m in ipairs(self:legal_move(pos)) do
                 if m.t == MOVE_PIECE then
-                    table.insert(map[(m.dst)], pos)
+                    table.insert(map[m.dst], pos)
                 end
             end
         end
@@ -1071,19 +1089,18 @@ function chess:load_fen(fen)
     end
     
     local function pboard(str)
-        local b = {}
+        local b = Box.make(Piece.none)
+        local i = 1
         for p in string.gmatch(str, '[^/]') do
             if is_digit(p) then -- empty
-                for _ = 1, tonumber(p) do
-                    b[#b+1] = Piece.none
-                end
+                i = i + tonumber(p)
             else
-                b[#b+1] = ppiece(p)
+                rawset(b, i, ppiece(p))
+                i = i + 1
             end
         end
 
         assert(#b == 64)
-        setmetatable(b, self.mt)
         self.board = b
     end
 
