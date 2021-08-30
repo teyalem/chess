@@ -695,42 +695,12 @@ function chess:is_pinned(side, pos, atk)
     return false
 end
 
--- test a move is pseudo-legal.
--- TODO: fill all checks
-function chess:is_pseudo_legal(m)
-    if m.t == MOVE_PUSH then
-        local side = Piece.side(m.piece)
-
-        for i = 1, m.distance do
-            local sq = Pos.advance(m.src, i*PAWN_RD[side], 0)
-            if not self:is_empty(sq) then return false end
-        end
-        return true
-
-    elseif m.t == MOVE_PIECE then
-        local side = Piece.side(m.piece)
-        return Pos.in_bound(m.dst)
-        and (self:is_empty(m.dst) or self:can_capture(m.dst, side))
-
-    elseif m.t == MOVE_CASTLE then
-
-    elseif m.t == MOVE_ENPASSANT then
-
-    elseif m.t == MOVE_PROMOTION then
-    end
-
-    assert(false) -- all moves must be checked
-end
-
 function chess:is_checked(side)
     return #self.attacked[side][self.king_pos[side]] > 0
 end
 
 -- chess:is_legal(move) returns true if the move is legal.
 function chess:is_legal(move)
-    -- filter out non-legal move
-    --if not self:is_pseudo_legal(move) then return false end
-
     -- check one can uncheck by move a piece to dst.
     local function is_uncheck(side, dst)
         local kpos = self.king_pos[side]
@@ -921,14 +891,14 @@ end
 -- cast a ray to direction dir and save moves to ms
 -- Move.t array -> Piece.t -> Pos.t -> int -> unit
 function chess:raycast(ms, p, src, dir)
+    local color = Piece.side(p)
+
     for i = 1, 7 do
         local sq = Pos.advance(src, i*RD[dir], i*FD[dir])
         if not Pos.in_bound(sq) then break end
 
-        local m = Move.normal(p, src, sq, not self:is_empty(sq))
-        if self:is_pseudo_legal(m) then
-            ms[#ms+1] = m
-        end
+        local m = Move.normal(p, src, sq, self:can_capture(sq, color))
+        ms[#ms+1] = m
 
         if not self:is_empty(sq) then
             break -- ray blocked; stop casting ray
@@ -973,6 +943,7 @@ end
 
 function chess:knight_move(p, src)
     local ps = {}
+    local color = Piece.side(p)
 
     for i = 2, 8, 2 do
         ps[#ps+1] = Pos.advance(src, RD[i], 2*FD[i])
@@ -982,8 +953,8 @@ function chess:knight_move(p, src)
     local ms = {}
     for _, dst in ipairs(ps) do
         if Pos.in_bound(dst) then
-            local m = Move.normal(p, src, dst, not self:is_empty(dst))
-            if self:is_pseudo_legal(m) then ms[#ms+1] = m end
+            local m = Move.normal(p, src, dst, self:can_capture(dst, color))
+            ms[#ms+1] = m
         end
     end
 
@@ -1006,14 +977,13 @@ chess.queen_move = chess:sliding_move(QUEEN_DIR)
 
 function chess:king_move(p, src)
     local ms = {}
+    local color = Piece.side(p)
 
     for i = 1, 8 do
         local dst = Pos.advance(src, RD[i], FD[i])
         if Pos.in_bound(dst) then
-            local m = Move.normal(p, src, dst, not self:is_empty(dst))
-            if self:is_pseudo_legal(m) then
-                ms[#ms+1] = m
-            end
+            local m = Move.normal(p, src, dst, self:can_capture(dst, color))
+            ms[#ms+1] = m
         end
     end
 
