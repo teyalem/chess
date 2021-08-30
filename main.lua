@@ -855,7 +855,7 @@ function chess:domove(m)
         end
 
     elseif m.t == MOVE_PIECE then
-        if m.captures then capture(m.dst) end
+        if m.captures then capture(m.piece, m.dst) end
         opt_check(m.piece, m.src)
         move(m.piece, m.src, m.dst)
 
@@ -875,7 +875,8 @@ function chess:domove(m)
         move(r, rpos, nrpos)
 
     elseif m.t == MOVE_ENPASSANT then
-        capture(m.cap)
+        local p = self:get_piece(m.cap)
+        capture(p, m.cap)
         move(m.piece, m.src, m.dst)
 
     elseif m.t == MOVE_PROMOTION then
