@@ -1,7 +1,7 @@
 GAME = {
     name = "Chess",
     author = "Hyeonung Baek (teyalem)",
-    version = 0.7
+    version = 0.9
 }
 
 -- print debug infos?
@@ -33,18 +33,24 @@ DEBUG = true
 --   + [x] wipe out duplicated codes
 --   + [x] implement better move generator
 -- - [x] refactor chess:domove and chess:is_legal
--- - [ ] pieces' sprites
+-- - [x] pieces' sprites
 
 -- Future Goals:
+-- - [ ] UI rework
+--   + [ ] screen size
+--   + [ ] window (checkmate/promotion)
+--   + [ ] menus
+--   + [ ] resizing
 -- - [ ] map rotation
 -- - [ ] stalemate
 -- - [ ] AI (maybe)
+-- - [ ] packaging
 
 -- DONE: refactor functions to use MOVE_* enum.
 -- DONE: feature - load chess board from file (args or drag-and-drop)
 -- DONE: add Box module for boards, attack maps, etc.
 -- TODO: look for sensible colors for board
--- TODO: add sprite
+-- DONE: add sprite
 
 -- Naming Conventions --
 -- 1. Global const variables are in CONSTANT_CASE.
@@ -151,6 +157,7 @@ end
 -- Color: 1 is white, 2 is black
 WHITE = 1
 BLACK = 2
+COLOR_NAME = { "white", "black" }
 
 -- Piece: 0 is none, 1 is pawn, 2 is knight, 3 is bishop, 4 is rook, 5 is queen, 6 is king
 NONE = 0
@@ -262,6 +269,16 @@ BCOLOR = {
 -- UI Settings --
 
 SQUARE_SIZE = 50 -- size of each square
+
+-- Sprites --
+
+SPRITES = { [WHITE] = {}, [BLACK] = {} }
+for color, cname in ipairs(COLOR_NAME) do
+    for i, v in ipairs(PNAME) do
+        local path = string.format("assets/%s_%s.png", v, cname)
+        SPRITES[color][i] = love.graphics.newImage(path)
+    end
+end
 
 -- Click Interface --
 
@@ -1226,18 +1243,13 @@ end
 
 -- draw a piece p at (x, y)
 function Piece.draw(x, y, p)
-    local x = mid(x)
-    local y = mid(y)
-    local side = Piece.side(p)
+    x = x + 9
+    y = y + 9
+    local color = Piece.side(p)
     local class = Piece.class(p)
-    local r = SQUARE_SIZE/2 - 5
 
-    -- temporary drawing
-    local color = ({{1, 1, 1}, {0, 0, 0}})[side]
-    G.setColor(color)
-    G.circle('fill', x, y, r)
-    G.setColor(.5, .5, .5)
-    G.print(PTYPE[class], x, y)
+    G.setColor(1, 1, 1)
+    G.draw(SPRITES[color][class], x, y)
 end
 
 -- win message when the winner is choosen.
