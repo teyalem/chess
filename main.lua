@@ -1135,6 +1135,16 @@ function chess:load_fen(fen)
         t[step](part)
         step = step + 1
     end
+
+    -- find kings
+    for i, p in ipairs(self.board) do
+        if Piece.class(p) == KING then
+            self.king_pos[Piece.side(p)] = pos(i)
+        end
+    end
+
+    self.attacked[WHITE] = self:gen_attack(BLACK)
+    self.attacked[BLACK] = self:gen_attack(WHITE)
 end
 
 -- Screen Position Functions --
