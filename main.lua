@@ -4,6 +4,9 @@ GAME = {
     version = 0.7
 }
 
+-- print debug infos?
+DEBUG = true
+
 -- Goals: (not being done this way)
 -- - [x] draw board
 -- - [x] move pieces
@@ -39,7 +42,7 @@ GAME = {
 
 -- DONE: refactor functions to use MOVE_* enum.
 -- DONE: feature - load chess board from file (args or drag-and-drop)
--- TODO: add Box module for boards, attack maps, etc.
+-- DONE: add Box module for boards, attack maps, etc.
 -- TODO: look for sensible colors for board
 -- TODO: add sprite
 
@@ -133,11 +136,14 @@ function reverse_table(t)
     return o
 end
 
--- dirty table trick
 -- creates a new empty table. use with init(f).
 function empty(_)
-    local t = {}
-    return t
+    return {nil} -- table trick
+end
+
+-- print debug
+function log(...)
+    if DEBUG then print(...) end
 end
 
 -- CONSTS --
@@ -337,12 +343,12 @@ function Pos.is_pos(p)
 end
 
 function Pos.rank(p)
-    assert(Pos.is_pos(p))
+    assert(Pos.is_pos(p), string.format("invalid type %s", type(p)))
     return p.rank
 end
 
 function Pos.file(p)
-    assert(Pos.is_pos(p))
+    assert(Pos.is_pos(p), string.format("invalid type %s", type(p)))
     return p.file
 end
 
@@ -566,7 +572,7 @@ Box.mt = {
         if Pos.is_pos(pos) then
             return rawget(b, index(pos))
         else
-            assert(false, "not a valid index")
+            error("not a valid index")
         end
     end,
 
@@ -574,7 +580,7 @@ Box.mt = {
         if Pos.is_pos(pos) then
             rawset(b, index(pos), v)
         else
-            assert(false, "not a valid index")
+            error("not a valid index")
         end
     end
 }
@@ -628,8 +634,7 @@ end
 -- end current side's turn
 function chess:end_turn()
     -- update attack map
-    local am = self:gen_attack(self.side)
-    self.attacked[OPPONENT[self.side]] = am
+    self.attacked[OPPONENT[self.side]] = self:gen_attack(self.side)
     self.dpush_file[OPPONENT[self.side]] = 0 -- clear en passant right
 
     self.side = OPPONENT[self.side]
@@ -668,10 +673,11 @@ function chess:can_capture(pos, side)
     return self:get_side(pos) == OPPONENT[side]
 end
 
--- chess:is_pinned(side, pos, atk) returns true if a piece of color side at pos
--- is absolutely pinned by attacking piece at atk, otherwise false.
--- NOTE: This function will return true if pos is the same as king's position.
-function chess:is_pinned(side, pos, atk)
+-- chess:is_pinned(side, pos, atk, ep) returns true if a piece of color side at
+-- pos is absolutely pinned by attacking piece at atk, otherwise false. If ep
+-- is set, it is ignored if it is in sight.
+-- NOTE: This function will return false if pos is the same as king's position.
+function chess:is_pinned(side, pos, atk, ep)
     local t = { {}, {}, BISHOP_DIR, ROOK_DIR, QUEEN_DIR, {} }
     local ap = self:get_piece(atk)
     
@@ -685,6 +691,8 @@ function chess:is_pinned(side, pos, atk)
                     met = true
                 elseif sq == self.king_pos[side] then
                     return met
+                elseif ep ~= nil and sq == ep then
+                    -- continue
                 else
                     break -- blocked by other piece
                 end
@@ -716,10 +724,10 @@ function chess:is_legal(move)
     end
 
     -- check piece is (absolutely) pinned.
-    local function is_pinned(side, pos)
-        local atks = self.attacked[side][pos]
+    local function is_pinned(side, pos, ep, atks)
+        atks = atks or self.attacked[side][pos]
         return exists(
-            function (atk) return self:is_pinned(side, pos, atk) end,
+            function (atk) return self:is_pinned(side, pos, atk, ep) end,
             atks)
     end
 
@@ -746,14 +754,17 @@ function chess:is_legal(move)
     elseif move.t == MOVE_PIECE or move.t == MOVE_PROMOTION then
         if Pos.in_bound(move.dst)
             and (self:is_empty(move.dst) or self:can_capture(move.dst, color)) then
-            if Piece.class(move.piece) == KING then -- king can move to uncontrolled square
+            if Piece.class(move.piece) == KING then -- kings can move to uncontrolled square
                 return #self.attacked[color][move.dst] == 0
+            elseif Piece.class(move.piece) == PAWN then
+                return self:can_capture(move.dst, color)
             elseif self:is_checked(color) then -- checked?
                 return is_uncheck(color, move.dst)
             else -- not checked; check pinned
                 return not is_pinned(color, move.src)
             end
         end
+
         return false
 
     elseif move.t == MOVE_CASTLE then
@@ -776,23 +787,30 @@ function chess:is_legal(move)
         return true
 
     elseif move.t == MOVE_ENPASSANT then
-        -- FIXME: need to check two pieces simultaneously (capturer and capturee)
-        -- check en passant right
-        if Pos.file(move.cap) ~= self.dpush_file[OPPONENT[color]] then
+        if Pos.file(move.cap) ~= self.dpush_file[OPPONENT[color]] -- no double push
+            or not self:can_capture(move.cap, color) then -- cannot capture
             return false
-        end
 
-        local kpos = self.king_pos[color]
-        local checked = self:is_checked(color)
-
-        if checked then
+        elseif self:is_checked(color) then
+            local kpos = self.king_pos[color]
             return mem(self.attacked[color][kpos], move.cap)
+
         else
-            return not is_pinned(color, move.src, move.cap)
+            -- build custom attacker list
+            local atks = {}
+            for i, v in ipairs(self.board) do
+                local class = Piece.class(v)
+                if Piece.side(v) == OPPONENT[color]
+                    and (class == ROOK or class == QUEEN) then
+                    atks[#atks+1] = pos(i)
+                end
+            end
+
+            return not is_pinned(color, move.src, move.cap, atks)
         end
     end
 
-    assert(false) -- the move must be one of above
+    error("Invalid Move") -- the move must be one of above
 end
 
 function chess:is_checkmated(side)
@@ -916,16 +934,11 @@ function chess:pawn_attack(p, src)
 
         if Pos.in_bound(dst) then
             -- move by capture
-            if self:can_capture(dst, side) then
-                ms[#ms+1] = Move.normal(p, src, dst, true)
-            end
+            ms[#ms+1] = Move.normal(p, src, dst, true)
 
             -- en passant
             local cap = Pos.make(Pos.rank(src), Pos.file(dst))
-            local cp = self:get_piece(cap)
-            if self:can_capture(cap, side) then
-                ms[#ms+1] = Move.enpassant(p, src, cap, dst)
-            end
+            ms[#ms+1] = Move.enpassant(p, src, cap, dst)
         end
     end
 
@@ -1019,7 +1032,6 @@ end
 -- generate attack map of side.
 -- map[i] = n means square i is being threatened by n adversary pieces.
 function chess:gen_attack(side) -- int -> Pos.t matrix
-    -- initialize map
     local map = Box.init(empty)
 
     -- collect attacks
@@ -1047,7 +1059,7 @@ end
 -- debug: print log
 function chess:print_log()
     for i = 1, #self.log, 2 do
-        print(math.floor(i/2) + 1, self.log[i], self.log[i+1] or "")
+        log(math.floor(i/2) + 1, self.log[i], self.log[i+1] or "")
     end
 end
 
@@ -1058,7 +1070,7 @@ function chess:load_fen(fen)
         local piece = PTYPE_REV[string.upper(c)]
         return Piece.make(color, piece)
     end
-    
+
     local function pboard(str)
         local b = Box.make(Piece.none)
         local i = 1
@@ -1070,17 +1082,12 @@ function chess:load_fen(fen)
                 i = i + 1
             end
         end
-
         assert(#b == 64)
         self.board = b
     end
 
     local function pside(str)
-        if str == 'w' then
-            self.side = WHITE
-        elseif str == 'b' then
-            self.side = BLACK
-        end
+        self.side = ({ w = WHITE, b = BLACK })[str]
     end
 
     local function pcastle(str)
@@ -1092,16 +1099,8 @@ function chess:load_fen(fen)
             local color = is_uppercase(c) and WHITE or BLACK
             c = string.upper(c)
 
-            local side
-            if c == 'K' then
-                side = KINGSIDE
-            elseif c == 'Q' then
-                side = QUEENSIDE
-            else
-                assert(false, 'invalid input')
-            end
-
-
+            local side = ({ K = KINGSIDE, Q = QUEENSIDE })[c]
+            assert(side ~= nil, 'invalid input')
             self.castling_right[color][side] = true
         end
     end
@@ -1111,13 +1110,7 @@ function chess:load_fen(fen)
             local file, rank = string.match(str, "(%l)(%d)")
             file = FILE_REV[file]
 
-            local color
-            if rank == '3' then
-                color = WHITE
-            elseif rank == '6' then
-                color = BLACK
-            end
-
+            local color = ({ ['3'] = WHITE, ['6'] = BLACK })[rank]
             assert(color ~= nil, "invalid enpassant rank")
             self.dpush_file[color] = file
         end
@@ -1143,6 +1136,7 @@ function chess:load_fen(fen)
         end
     end
 
+    -- find attcked squares
     self.attacked[WHITE] = self:gen_attack(BLACK)
     self.attacked[BLACK] = self:gen_attack(WHITE)
 end
