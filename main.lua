@@ -1,5 +1,5 @@
 GAME = {
-    name = "Chess",
+    name = "LőChess",
     author = "Hyeonung Baek (teyalem)",
     version = 0.9
 }
@@ -49,7 +49,6 @@ DEBUG = true
 -- DONE: refactor functions to use MOVE_* enum.
 -- DONE: feature - load chess board from file (args or drag-and-drop)
 -- DONE: add Box module for boards, attack maps, etc.
--- TODO: look for sensible colors for board
 -- DONE: add sprite
 
 -- Naming Conventions --
@@ -58,9 +57,10 @@ DEBUG = true
 -- 3. function names are in snake_case.
 
 -- List Functions --
--- A list is a table that has only integer indexes and iteratable with ipairs.
+-- A list is a table that has only integer indexes and iteratable with
+-- ipairs.
 
--- init n f generates n-length list 
+-- init n f is {f(0), f(1), f(2), ..., f(n-1)}.
 function init(n, f)
     local xs = {}
     for i = 0, n-1 do
@@ -126,14 +126,6 @@ function for_all(f, xs)
     return true
 end
 
-function is_uppercase(c)
-    return 'A' <= c and c <= 'Z'
-end
-
-function is_digit(c)
-    return '0' <= c and c <= '9'
-end
-
 function reverse_table(t)
     local o = {}
     for k, v in pairs(t) do
@@ -144,12 +136,24 @@ end
 
 -- creates a new empty table. use with init(f).
 function empty(_)
-    return {nil} -- table trick
+    -- Table Trick. {} returns same table every time, but {nil} returns
+    -- a new table when called.
+    return {nil}
 end
+
+-- Utility functions --
 
 -- print debug
 function log(...)
     if DEBUG then print(...) end
+end
+
+function is_uppercase(c)
+    return 'A' <= c and c <= 'Z'
+end
+
+function is_digit(c)
+    return '0' <= c and c <= '9'
 end
 
 -- CONSTS --
@@ -195,7 +199,8 @@ FD = { [0] = 0, 0, 1, 1, 1, 0, -1, -1, -1 } -- file direction
 OPPONENT = { BLACK, WHITE } -- opponent[p] player
 BACKRANK = { 1, 8 } -- backrank[p] of player p
 HOMERANK = { 2, 7 }
-PAWN_RD = { 1, -1 } -- pawns' marching direction
+EP_RANK = { 6, 3 }
+PAWN_DIR = { 1, 5 } -- pawns' marching direction
 
 -- Sliding pieces' directions
 BISHOP_DIR = init(4, function (n) return 2*n + 2 end) -- diagonals
@@ -266,88 +271,28 @@ BCOLOR = {
     1, 1, 1, 1, 1, 1, 1, 1,
 }
 
--- UI Settings --
+-- GUI --
 
 SQUARE_SIZE = 50 -- size of each square
 
+-- Selection Settings --
+
+SEL_COLOR = {1, .3, .3}
+SEL_RADIUS = SQUARE_SIZE/2 - 4
+PROMOTION_COLOR = {.5, .5, .5}
+PROMOTION_PIECES = { KNIGHT, BISHOP, ROOK, QUEEN } -- piece to promote to
+
 -- Sprites --
 
+SPRITE_SIZE = 32
+SPRITE_POS = (SQUARE_SIZE - SPRITE_SIZE) / 2
 SPRITES = { [WHITE] = {}, [BLACK] = {} }
+
+-- load sprites
 for color, cname in ipairs(COLOR_NAME) do
     for i, v in ipairs(PNAME) do
         local path = string.format("assets/%s_%s.png", v, cname)
         SPRITES[color][i] = love.graphics.newImage(path)
-    end
-end
-
--- Click Interface --
-
-sel = { -- Selection UI Settings
-    color = {1, .3, .3}, -- selection color
-    promotion_color = {.5, .5, .5}, -- promotion window color
-    radius = SQUARE_SIZE/2 - 4, -- move sel radius
-    pieces = { KNIGHT, BISHOP, ROOK, QUEEN } -- piece to promote to (knight, bishop, rook, queen)
-}
-
-function sel:reset()
-    self.state = 'unsel' -- Sel.State.t
-    self.selected = nil -- Pos.t
-    self.moves = nil -- Move.t list
-    self.move = nil
-end
-
-function sel:select(pos)
-    self.state = 'selected'
-    self.selected = pos
-    self.moves = chess:legal_move(pos)
-end
-
-function sel:promotion(m)
-    self.state = MOVE_PROMOTION
-    self.move = m
-end
-
--- Main logic of select UI
-function sel:click(pos)
-    if chess.winner ~= nil then return end
-
-    if self.state == 'unsel' and chess:get_side(pos) == chess.side then
-        self:select(pos)
-
-    elseif self.state == 'selected' then
-        if self.selected == pos then -- reset selection by clicking the same sqaure
-            self:reset()
-        else
-            local m = find(function (m) return pos == Move.sel(m) end, self.moves)
-
-            if m ~= nil then -- move
-                if Piece.is_pawn(chess:get_piece(self.selected))
-                    and Pos.rank(pos) == BACKRANK[OPPONENT[chess.side]] then -- promotion
-                    self:promotion(Move.sel(m))
-                    return
-                end
-
-                chess:take_turn(m)
-                self:reset()
-            end
-
-            if not moved and chess:get_side(pos) == chess.side then -- reselect
-                self:select(pos)
-            end
-        end
-
-    elseif self.state == MOVE_PROMOTION then
-        local i = Pos.file(pos)
-        local m
-        if Pos.rank(pos) == 5 and 2 <= i and i <= 6 then
-            local piece = self.pieces[i-2]
-            m = Move.to_promotion(self.move, piece)
-        else
-            m = self.move -- move without promotion
-        end
-
-        chess:take_turn(m)
-        self:reset()
     end
 end
 
@@ -375,14 +320,18 @@ end
 
 Pos.mt = { __eq = Pos.equals }
 
-function Pos.make(rank, file)
-    local p = { _t = 'pos', rank = rank, file = file }
+function Pos.make(f, r)
+    local p = { _t = 'pos', file = f, rank = r }
     setmetatable(p, Pos.mt)
     return p
 end
 
-function Pos.advance(p, r, f)
-    return Pos.make(Pos.rank(p) + r, Pos.file(p) + f)
+function Pos.advance(p, f, r)
+    return Pos.make(Pos.file(p) + f, Pos.rank(p) + r)
+end
+
+function Pos.slide(p, d, i)
+    return Pos.advance(p, i*FD[d], i*RD[d])
 end
 
 function Pos.in_bound(p)
@@ -395,7 +344,7 @@ function Pos.fileside(p)
     local f = Pos.file(p)
     if A <= f and f <= D then
         return QUEENSIDE
-    else
+    else -- e to h
         return KINGSIDE
     end
 end
@@ -408,14 +357,22 @@ end
 function Pos.is_lined(a, b, c)
     local function sub(a, b)
         return Pos.make(
-            Pos.rank(a) - Pos.rank(b),
-            Pos.file(a) - Pos.file(b))
+            Pos.file(a) - Pos.file(b),
+            Pos.rank(a) - Pos.rank(b))
+    end
+
+    local function dot(a, b)
+        return Pos.file(a) * Pos.file(b) + Pos.rank(a) * Pos.rank(b)
+    end
+
+    local function l(a)
+        return math.sqrt(dot(a, a))
     end
 
     local ca = sub(a, c)
     local cb = sub(b, c)
 
-    return Pos.rank(ca) * Pos.file(cb) == Pos.rank(cb) * Pos.file(ca)
+    return dot(ca, cb) == l(ca) * l(cb)
 end
 
 -- position to table index
@@ -425,47 +382,41 @@ end
 
 -- table index to position
 function pos(index)
-    local r = 8 - math.floor((index-1) / 8)
     local f = (index-1) % 8 + 1
-    return Pos.make(r, f)
+    local r = 8 - math.floor((index-1) / 8)
+    return Pos.make(f, r)
 end
 
--- Chess Piece Module --
+-- Piece --
+
 Piece = {}
 
-function Piece.make(side, class)
+function Piece.make(c, t)
     return {
-        side = side, 
-        class = class,
+        color = c,
+        t = t,
     }
 end
 
 -- nothing
 Piece.none = Piece.make(0, NONE)
 
-function Piece.side(p)
-    return p.side
+function Piece.color(p)
+    return p.color
 end
 
-function Piece.class(p)
-    return p.class
+function Piece.type(p)
+    return p.t
 end
 
--- shortcuts for common compares
-
--- is p none(empty)?
-function Piece.is_none(p)
-    return Piece.class(p) == NONE
-end
-
--- is p a pawn?
-function Piece.is_pawn(p)
-    return Piece.class(p) == PAWN
-end
-
--- is p a king?
-function Piece.is_king(p)
-    return Piece.class(p) == KING
+function Piece.to_string(p)
+    if Piece.type(p) == NONE then
+        return ""
+    else
+        return string.format("%s %s",
+            COLOR_NAME[Piece.color(p)],
+            PNAME[Piece.type(p)])
+    end
 end
 
 -- Move Module --
@@ -528,18 +479,39 @@ function Move.to_promotion(m, p)
     return m
 end
 
+function Move.color(m)
+    local color = m.piece ~= nil and Piece.color(m.piece) or m.color
+    assert(color ~= nil)
+    return color
+end
+
+function Move.dst(m)
+    if m.t == MOVE_PUSH then
+        local color = Piece.color(m.piece)
+        return Pos.slide(m.src, PAWN_DIR[color], m.distance)
+    elseif m.t == MOVE_PIECE
+        or m.t == MOVE_PROMOTION
+        or m.t == MOVE_ENPASSANT then
+        return m.dst
+    elseif m.t == MOVE_CASTLE then
+        return Pos.make(CASTLE_FILE[m.side][1], BACKRANK[m.color])
+    end
+    error("invalid move type")
+end
+
 -- returns the position to press in order to do the move m.
 function Move.sel(m)
     if m.t == MOVE_PUSH then
-        local side = Piece.side(m.piece)
-        return Pos.advance(m.src, m.distance * PAWN_RD[side], 0)
-    elseif m.t == MOVE_PIECE then
+        local color = Piece.color(m.piece)
+        return Pos.slide(m.src, PAWN_DIR[color], m.distance)
+    elseif m.t == MOVE_PIECE
+        or m.t == MOVE_PROMOTION
+        or m.t == MOVE_ENPASSANT then
         return m.dst
     elseif m.t == MOVE_CASTLE then
-        return Pos.make(BACKRANK[m.color], ROOK_FILE[m.side])
-    elseif m.t == MOVE_ENPASSANT then
-        return m.dst
+        return Pos.make(ROOK_FILE[m.side], BACKRANK[m.color])
     end
+    error("invalid move type")
 end
 
 -- to_algebraic returns the Algebraic Notation of m.
@@ -549,23 +521,23 @@ function Move.to_algebraic(m)
         local x = x and 'x' or ''
         local d = Pos.to_string(m.dst)
 
-        local s = PTYPE[Piece.class(p)]
-        if Piece.is_pawn(p) or promotion then
+        local class = Piece.type(p)
+        local s = PTYPE[class]
+        if class == PAWN or promotion then
             s = captured and FILE[Pos.file(src)] or ""
         end
 
         local pro = ""
         if promotion then
-            pro = '=' .. PTYPE[Piece.class(p)]
+            pro = '=' .. PTYPE[Piece.type(p)]
         end
 
         return string.format("%s%s%s%s", s, x, d, pro)
     end
 
     if m.t == MOVE_PUSH then
-        local dir = PAWN_RD[Piece.side(m.piece)]
-        local d = Pos.rank(m.src) + m.distance * dir
-        local dst = Pos.make(d, Pos.file(m.src))
+        local color = Piece.color(m.piece)
+        local dst = Pos.slide(m.src, PAWN_DIR[color], m.distance)
         return Pos.to_string(dst)
     elseif m.t == MOVE_PIECE then
         return format_move(m.piece, m.src, m.dst, m.captures)
@@ -611,7 +583,7 @@ end
 
 function Box.init(f)
     local b = {}
-    for i = 1, 64 do b[i] = f(i) end
+    for i = 1, 64 do rawset(b, i, f(i)) end
     setmetatable(b, Box.mt)
     return b
 end
@@ -634,8 +606,10 @@ function chess:reset()
         return b
     end
 
-    self.board = make_board(BCOLOR, BCLASS)
-    self.king_pos = { Pos.make(1, E), Pos.make(8, E) }
+    self.board = Box.init(function (i)
+        return Piece.make(BCOLOR[i], BCLASS[i])
+    end)
+    self.king_pos = { Pos.make(E, 1), Pos.make(E, 8) }
 
     -- rights
     self.castling_right = { {true, true}, {true, true} }
@@ -651,16 +625,22 @@ end
 -- end current side's turn
 function chess:end_turn()
     -- update attack map
-    self.attacked[OPPONENT[self.side]] = self:gen_attack(self.side)
+    self.attacked[BLACK] = self:attack_map(WHITE)
+    self.attacked[WHITE] = self:attack_map(BLACK)
+
     self.dpush_file[OPPONENT[self.side]] = 0 -- clear en passant right
 
     self.side = OPPONENT[self.side]
-    if self.side == 1 then
+    if self.side == WHITE then -- turn went back to white
         self.turn = self.turn + 1
     end
 
     for _, color in ipairs{WHITE, BLACK} do
-        if chess:is_checkmated(chess.side) then
+        if chess:is_checked(color) then
+            log(COLOR_NAME[color], "is checked")
+        end
+
+        if chess:is_checkmated(color) then
             self.winner = OPPONENT[color]
         end
     end
@@ -671,175 +651,223 @@ function chess:get_piece(pos)
     return self.board[pos]
 end
 
-function chess:get_side(pos)
+function chess:get_color(pos)
     local p = self:get_piece(pos)
-    return Piece.side(p)
-end
-
-function chess:get_class(pos)
-    local p = self:get_piece(pos)
-    return Piece.class(p)
+    return Piece.color(p)
 end
 
 function chess:is_empty(pos)
     local p = self:get_piece(pos)
-    return Piece.is_none(p)
+    return Piece.type(p) == NONE
 end
 
-function chess:can_capture(pos, side)
-    return self:get_side(pos) == OPPONENT[side]
+function chess:can_capture(pos, color)
+    local p = self:get_piece(pos)
+    return Piece.color(p) == OPPONENT[color]
 end
 
--- chess:is_pinned(side, pos, atk, ep) returns true if a piece of color side at
--- pos is absolutely pinned by attacking piece at atk, otherwise false. If ep
--- is set, it is ignored if it is in sight.
--- NOTE: This function will return false if pos is the same as king's position.
-function chess:is_pinned(side, pos, atk, ep)
-    local t = { {}, {}, BISHOP_DIR, ROOK_DIR, QUEEN_DIR, {} }
-    local ap = self:get_piece(atk)
-    
-    for d in ipairs(t[Piece.class(ap)]) do
-        local met = false
-        for i = 1, 7 do
-            local sq = Pos.advance(atk, i*RD[d], i*FD[d])
-            if not Pos.in_bound(sq) then break end -- stop searching outside the board
-            if not self:is_empty(sq) then -- only check occupied squares
-                if sq == pos then
-                    met = true
-                elseif sq == self.king_pos[side] then
-                    return met
-                elseif ep ~= nil and sq == ep then
-                    -- continue
-                else
-                    break -- blocked by other piece
-                end
-            end
+-- chess:collect_squares(color, ptypes) collects squares that is
+-- occupied by pieces that is color and one of ptypes.
+function chess:collect_squares(color, ptypes)
+    local out = {}
+
+    for i, p in ipairs(self.board) do
+        if Piece.color(p) == color and mem(Piece.type(p), ptypes) then
+            out[#out+1] = pos(i)
+        end
+    end
+
+    return out
+end
+
+-- chess:is_reachable(src, dst, dir, ignores) returns true if a ray directing
+-- dir from src can reach to dst ignoring pieces in ignores.
+function chess:is_reachable(src, dst, dir, ignores)
+    for i = 1, 7 do
+        local sq = Pos.slide(src, dir, i)
+        if not Pos.in_bound(sq) then break end
+
+        if sq == dst then
+            return true
+        elseif not (self:is_empty(sq) or mem(sq, ignores)) then
+            break
         end
     end
 
     return false
 end
 
-function chess:is_checked(side)
-    return #self.attacked[side][self.king_pos[side]] > 0
+-- chess:find_raydir(p, src, dst, ignores) finds ray direction that can go from
+-- src to dst ignoring pieces in ignores. If such a ray is not found, it
+-- returns nil.
+function chess:find_raydir(src, dst, ignores)
+    local t = { {}, {}, BISHOP_DIR, ROOK_DIR, QUEEN_DIR, {} }
+    ignores = ignores or {}
+    local p = self:get_piece(src)
+
+    for _, d in ipairs(t[Piece.type(p)]) do
+        if self:is_reachable(src, dst, d, ignores) then
+            return d
+        end
+    end
+
+    return nil
 end
 
--- chess:is_legal(move) returns true if the move is legal.
-function chess:is_legal(move)
-    -- check one can uncheck by move a piece to dst.
-    local function is_uncheck(side, dst)
-        local kpos = self.king_pos[side]
-        local atks = self.attacked[side][kpos]
+-- chess:is_pinned_by(color, pos, atk, ep) returns true if a piece of color
+-- at pos is absolutely pinned by attacking piece at atk.
+function chess:is_pinned_by(color, pos, atk, ignores)
+    ignores = ignores or {}
+    local kpos = self.king_pos[color]
 
-        for _, atk in ipairs(atks) do
-            if Pos.is_lined(atk, dst, kpos) -- blocks ray
-                or self:can_capture(dst, side) then -- or captures
-                return true
-            end
-        end
+    if pos == kpos then -- king cannot be pinned!
         return false
+    else
+        local d = self:find_raydir(atk, pos, ignores)
+
+        -- LuaJit (Lua 5.1) uses unpack(), Lua 5.4 uses table.unpack()
+        return d ~= nil
+        and self:is_reachable(atk, kpos, d, {pos, unpack(ignores)})
+    end
+end
+
+function chess:is_pinned(src, ignores, atks)
+    local color = Piece.color(self:get_piece(src))
+
+    return exists(
+        function (atk)
+            return self:is_pinned_by(color, src, atk, ignores)
+        end,
+        atks or self.attacked[color][src])
+end
+
+function chess:is_checked(color)
+    return #self.attacked[color][self.king_pos[color]] > 0
+end
+
+function chess:is_pseudo_legal(m)
+    local color = Move.color(m)
+
+    -- check the piece can move to dst.
+    local function can_moveto(dst)
+        return self:is_empty(dst) or self:can_capture(dst, color)
     end
 
-    -- check piece is (absolutely) pinned.
-    local function is_pinned(side, pos, ep, atks)
-        atks = atks or self.attacked[side][pos]
-        return exists(
-            function (atk) return self:is_pinned(side, pos, atk, ep) end,
-            atks)
-    end
-
-    local color = move.piece ~= nil and Piece.side(move.piece) or move.color
-    assert(color ~= nil)
-
-    if move.t == MOVE_PUSH then
-        if move.distance == 2 and Pos.rank(move.src) ~= HOMERANK[color] then
+    if m.t == MOVE_PUSH then
+        if m.distance == 2 and Pos.rank(m.src) ~= HOMERANK[color] then
             return false
         end
 
-        for i = 1, move.distance do
-            local sq = Pos.advance(move.src, i*PAWN_RD[color], 0)
+        for i = 1, m.distance do
+            local sq = Pos.slide(m.src, PAWN_DIR[color], i)
             if not self:is_empty(sq) then return false end
         end
+        return true
 
-        if self:is_checked(color) then
-            local dst = Pos.advance(move.src, move.distance * PAWN_RD[color], 0)
-            return is_uncheck(color, dst)
+    elseif m.t == MOVE_PIECE or m.t == MOVE_PROMOTION then
+        if Piece.type(m.piece) == PAWN then -- pawn's MOVE_PIECE is always capture
+            return self:can_capture(m.dst, color)
         else
-            return not is_pinned(color, move.src)
+            return can_moveto(m.dst)
         end
 
-    elseif move.t == MOVE_PIECE or move.t == MOVE_PROMOTION then
-        if Pos.in_bound(move.dst)
-            and (self:is_empty(move.dst) or self:can_capture(move.dst, color)) then
-            if Piece.class(move.piece) == KING then -- kings can move to uncontrolled square
-                return #self.attacked[color][move.dst] == 0
-            elseif Piece.class(move.piece) == PAWN then
-                return self:can_capture(move.dst, color)
-            elseif self:is_checked(color) then -- checked?
-                return is_uncheck(color, move.dst)
-            else -- not checked; check pinned
-                return not is_pinned(color, move.src)
-            end
-        end
-
-        return false
-
-    elseif move.t == MOVE_CASTLE then
-        if self.castling_right[color][move.side] == false -- no right
-            or self:is_checked(color) then -- checked
+    elseif m.t == MOVE_CASTLE then
+        -- castling right
+        if self.castling_right[color][m.side] == false then
             return false
-        end
-
-        -- scan passing squares to check the way is safe or not blocked
-        local r = BACKRANK[color]
-        local d = ({-1, 1})[move.side]
-
-        for f = KING_FILE + d, ROOK_FILE[move.side] - d, d do
-            local sq = Pos.make(r, f)
-            if not self:is_empty(sq) or #self.attacked[color][sq] > 0 then
-                return false
-            end
         end
 
         return true
 
-    elseif move.t == MOVE_ENPASSANT then
-        if Pos.file(move.cap) ~= self.dpush_file[OPPONENT[color]] -- no double push
-            or not self:can_capture(move.cap, color) then -- cannot capture
-            return false
+    elseif m.t == MOVE_ENPASSANT then
+        return Pos.rank(m.src) == EP_RANK[color]
+        and Pos.file(m.cap) == self.dpush_file[OPPONENT[color]]
+        and can_moveto(m.dst)
+    end
+
+    error("Invalid move")
+end
+
+-- chess:is_legal(move) returns true if the move is legal.
+function chess:is_legal(m)
+    -- legal is a subset of pseudo legal.
+    if not self:is_pseudo_legal(m) then return false end
+
+    local color = Move.color(m)
+    local kpos = self.king_pos[color]
+
+    -- uncheck by blocking
+    local function blocks_ray(dst)
+        return exists(
+            function (atk)
+                return Pos.is_lined(kpos, dst, atk)
+            end,
+            self.attacked[color][kpos])
+    end
+
+    -- uncheck by capture
+    local function captures(pos)
+        return exists(
+            function (atk)
+                return pos == atk and self:can_capture(pos, color)
+            end,
+            self.attacked[color][kpos])
+    end
+
+    if m.t == MOVE_PUSH or m.t == MOVE_PIECE or m.t == MOVE_PROMOTION then
+        if Piece.type(m.piece) == KING then
+            local defmap = self:defend_map(OPPONENT[color])
+            local in_ray = exists( -- opponent is reachable after moving?
+                function (atk)
+                    local d = self:find_raydir(atk, kpos)
+                    return d ~= nil and self:is_reachable(atk, m.dst, d, {kpos})
+                end,
+                self.attacked[color][kpos])
+
+            return not (defmap[m.dst] or in_ray)
 
         elseif self:is_checked(color) then
-            local kpos = self.king_pos[color]
-            return mem(self.attacked[color][kpos], move.cap)
-
+            local dst = Move.dst(m)
+            return blocks_ray(dst) or captures(dst)
         else
-            -- build custom attacker list
-            local atks = {}
-            for i, v in ipairs(self.board) do
-                local class = Piece.class(v)
-                if Piece.side(v) == OPPONENT[color]
-                    and (class == ROOK or class == QUEEN) then
-                    atks[#atks+1] = pos(i)
-                end
-            end
+            return not self:is_pinned(m.src)
+        end
 
-            return not is_pinned(color, move.src, move.cap, atks)
+    elseif m.t == MOVE_CASTLE then
+        if self:is_checked(color) then return false end
+
+        -- scan passing squares to check the way is safe and not blocked
+        local d = ({-1, 1})[m.side]
+        for f = KING_FILE + d, CASTLE_FILE[m.side][1], d do
+            local sq = Pos.make(f, BACKRANK[color])
+            if not self:is_empty(sq) or #self.attacked[color][sq] > 0 then
+                return false
+            end
+        end
+        return true
+
+    elseif m.t == MOVE_ENPASSANT then
+        if self:is_checked(color) then
+            return blocks_ray(m.dst) or captures(m.cap)
+        else
+            local atks = self:collect_squares(OPPONENT[color], {ROOK, QUEEN})
+            return not self:is_pinned(m.src, {m.cap}, atks)
         end
     end
 
     error("Invalid Move") -- the move must be one of above
 end
 
-function chess:is_checkmated(side)
-    local kpos = self.king_pos[side]
-    local atks = self.attacked[side][kpos]
+function chess:is_checkmated(color)
+    local kpos = self.king_pos[color]
+    local atks = self.attacked[color][kpos]
 
     if #atks == 0 then
         return false
 
     elseif #atks == 1 then -- single check; check there's no legal move
         for i, p in ipairs(self.board) do
-            if Piece.side(p) == side then
+            if Piece.color(p) == color then
                 local ms = self:legal_move(pos(i))
                 if #ms > 0 then return false end
             end
@@ -852,60 +880,63 @@ function chess:is_checkmated(side)
     end
 end
 
--- domove performs the move m.
--- Assume input move is legal (which is restricted by selection).
+-- domove(m) performs the move m. It assumes the input move m is legal.
 function chess:domove(m)
+    local color = Move.color(m)
+
+    -- quiet move
     local function move(p, src, dst)
         self.board[dst] = p
         self.board[src] = Piece.none
     end
 
+    -- capture piece at pos
     local function capture(p, pos)
         self.captured[#self.captured+1] = p
         self.board[pos] = Piece.none
     end
 
-    local function opt_check(p, src, dst)
-        if Piece.class(p) == KING then
-            local side = Piece.side(p)
-            self.king_pos[side] = dst
-            self.castling_right[side] = {false, false}
+    local function update_state(p, src, dst)
+        local pt = Piece.type(p)
 
-        elseif Piece.class(p) == ROOK then
+        if pt == KING then
+            self.king_pos[color] = dst
+            self.castling_right[color] = {false, false}
+
+        elseif pt == ROOK then
             local i = Pos.fileside(src)
-            local pos = Pos.make(BACKRANK[Piece.side(p)], ROOK_FILE[i])
-            if pos == src then
-                self.castling_right[side][i] = false
+            local pos = Pos.make(ROOK_FILE[i], BACKRANK[color])
+            if self.castling_right[color][i] and src == pos then
+                self.castling_right[color][i] = false
             end
         end
     end
 
     if m.t == MOVE_PUSH then
-        local side = Piece.side(m.piece)
-        local dst = Pos.advance(m.src, m.distance * PAWN_RD[side], 0)
+        local dst = Pos.slide(m.src, PAWN_DIR[color], m.distance)
 
         move(m.piece, m.src, dst)
         if m.distance == 2 then -- double push
-            self.dpush_file[side] = Pos.file(m.src)
+            self.dpush_file[color] = Pos.file(m.src)
         end
 
     elseif m.t == MOVE_PIECE then
         if m.captures then capture(m.piece, m.dst) end
-        opt_check(m.piece, m.src)
+        update_state(m.piece, m.src, m.dst)
         move(m.piece, m.src, m.dst)
 
     elseif m.t == MOVE_CASTLE then
         -- uses hardcoded data
-        local b = BACKRANK[m.color]
-        local kpos = Pos.make(b, KING_FILE)
-        local rpos = Pos.make(b, ROOK_FILE[m.side])
+        local function f(f) return Pos.make(f, BACKRANK[color]) end
+        local kpos = f(KING_FILE)
+        local rpos = f(ROOK_FILE[m.side])
         local np = CASTLE_FILE[m.side]
-        local nkpos = Pos.make(b, np[1])
-        local nrpos = Pos.make(b, np[2])
+        local nkpos = f(np[1])
+        local nrpos = f(np[2])
         local k = self:get_piece(kpos)
         local r = self:get_piece(rpos)
 
-        opt_check(k, kpos, nkpos) -- remove castling right
+        update_state(k, kpos, nkpos) -- remove castling right
         move(k, kpos, nkpos)
         move(r, rpos, nrpos)
 
@@ -917,20 +948,20 @@ function chess:domove(m)
     elseif m.t == MOVE_PROMOTION then
         if m.captures then capture(m.dst) end
         move(m.piece, m.src, m.dst)
-        m.p.class = m.promotion
+        m.p.t = m.promotion -- FIXME: abstraction needed
     end
 end
 
--- Pseudo-legal Move Generating Functions --
+-- Move Generating Functions --
 -- move function = Piece.t -> Pos.t -> Move.t list
 
 -- cast a ray to direction dir and save moves to ms
 -- Move.t array -> Piece.t -> Pos.t -> int -> unit
 function chess:raycast(ms, p, src, dir)
-    local color = Piece.side(p)
+    local color = Piece.color(p)
 
     for i = 1, 7 do
-        local sq = Pos.advance(src, i*RD[dir], i*FD[dir])
+        local sq = Pos.slide(src, dir, i)
         if not Pos.in_bound(sq) then break end
 
         local m = Move.normal(p, src, sq, self:can_capture(sq, color))
@@ -944,17 +975,17 @@ end
 
 function chess:pawn_attack(p, src)
     local ms = {}
-    local side = Piece.side(p)
+    local color = Piece.color(p)
 
     for _, fd in ipairs{-1, 1} do
-        local dst = Pos.advance(src, PAWN_RD[side], fd)
+        local dst = Pos.advance(src, fd, RD[PAWN_DIR[color]])
 
         if Pos.in_bound(dst) then
             -- move by capture
             ms[#ms+1] = Move.normal(p, src, dst, true)
 
             -- en passant
-            local cap = Pos.make(Pos.rank(src), Pos.file(dst))
+            local cap = Pos.make(Pos.file(dst), Pos.rank(src))
             ms[#ms+1] = Move.enpassant(p, src, cap, dst)
         end
     end
@@ -973,22 +1004,19 @@ function chess:pawn_move(p, src)
 end
 
 function chess:knight_move(p, src)
-    local ps = {}
-    local color = Piece.side(p)
-
-    for i = 2, 8, 2 do
-        ps[#ps+1] = Pos.advance(src, RD[i], 2*FD[i])
-        ps[#ps+1] = Pos.advance(src, 2*RD[i], FD[i])
-    end
-
+    local color = Piece.color(p)
     local ms = {}
-    for _, dst in ipairs(ps) do
+
+    local function add(dst)
         if Pos.in_bound(dst) then
-            local m = Move.normal(p, src, dst, self:can_capture(dst, color))
-            ms[#ms+1] = m
+            ms[#ms+1] = Move.normal(p, src, dst, self:can_capture(dst, color))
         end
     end
 
+    for _, i in ipairs(BISHOP_DIR) do
+        add(Pos.advance(src, 2*FD[i], RD[i]))
+        add(Pos.advance(src, FD[i], 2*RD[i]))
+    end
     return ms
 end
 
@@ -1008,17 +1036,16 @@ chess.queen_move = chess:sliding_move(QUEEN_DIR)
 
 function chess:king_move(p, src)
     local ms = {}
-    local color = Piece.side(p)
+    local color = Piece.color(p)
 
     for i = 1, 8 do
-        local dst = Pos.advance(src, RD[i], FD[i])
+        local dst = Pos.advance(src, FD[i], RD[i])
         if Pos.in_bound(dst) then
             local m = Move.normal(p, src, dst, self:can_capture(dst, color))
             ms[#ms+1] = m
         end
     end
 
-    local color = Piece.side(p)
     ms[#ms+1] = Move.castle(color, KINGSIDE)
     ms[#ms+1] = Move.castle(color, QUEENSIDE)
 
@@ -1037,7 +1064,7 @@ chess.moves = {
 function chess:collect_moves(t, pos)
     assert(not self:is_empty(pos))
     local p = self:get_piece(pos)
-    local ms = t[Piece.class(p)](self, p, pos)
+    local ms = t[Piece.type(p)](self, p, pos)
     return filter(function (m) return self:is_legal(m) end,  ms)
 end
 
@@ -1046,19 +1073,98 @@ function chess:legal_move(pos)
     return self:collect_moves(self.moves, pos)
 end
 
--- generate attack map of side.
+-- generate attack map of color.
 -- map[i] = n means square i is being threatened by n adversary pieces.
-function chess:gen_attack(side) -- int -> Pos.t matrix
+function chess:attack_map(color) -- int -> Pos.t matrix
     local map = Box.init(empty)
 
     -- collect attacks
     for i, p in ipairs(self.board) do
         local pos = pos(i)
 
-        if Piece.side(p) == side then
+        if Piece.color(p) == color
+            and Piece.type(p) ~= KING then -- king cannot attack
             for _, m in ipairs(self:legal_move(pos)) do
-                if m.t == MOVE_PIECE then
+                if m.t == MOVE_PIECE or m.t == MOVE_PROMOTION then
                     table.insert(map[m.dst], pos)
+                end
+            end
+        end
+    end
+
+    return map
+end
+
+function chess:pawn_def(p, pos)
+    local r = RD[PAWN_DIR[Piece.color(p)]]
+    local ps = map(function (f) return Pos.advance(pos, f, r) end, { -1, 1 })
+    return filter(Pos.in_bound, ps)
+end
+
+function chess:knight_def(p, pos)
+    local ps = {}
+    for _, i in ipairs(BISHOP_DIR) do
+        ps[#ps+1] = Pos.advance(pos, 2*FD[i], RD[i])
+        ps[#ps+1] = Pos.advance(pos, FD[i], 2*RD[i])
+    end
+    return filter(Pos.in_bound, ps)
+end
+
+function chess:ray_def(ps, color, pos, dir)
+    for i = 1, 7 do
+        local sq = Pos.slide(pos, dir, i)
+        if Pos.in_bound(sq)
+            and (self:is_empty(sq) or self:get_color(sq) == color) then
+            ps[#ps+1] = sq
+        else
+            break
+        end
+    end
+end
+
+function chess:sliding_def(dirs)
+    return function(self, p, pos)
+        local color = Piece.color(p)
+        local ps = {}
+        for _, d in ipairs(dirs) do
+            self:ray_def(ps, color, pos, d)
+        end
+        return ps
+    end
+end
+
+chess.bishop_def = chess:sliding_def(BISHOP_DIR)
+chess.rook_def = chess:sliding_def(ROOK_DIR)
+chess.queen_def = chess:sliding_def(QUEEN_DIR)
+
+function chess:king_def(p, pos)
+    local ps = {}
+    for d = 1, 8 do
+        ps[#ps+1] = Pos.slide(pos, d, 1)
+    end
+    return filter(Pos.in_bound, ps)
+end
+
+chess.defs = {
+    chess.pawn_def,
+    chess.knight_def,
+    chess.bishop_def,
+    chess.rook_def,
+    chess.queen_def,
+    chess.king_def
+}
+
+function chess:defend_map(color)
+    local map = Box.make(false)
+
+    for i, p in ipairs(self.board) do
+        local pos = pos(i)
+
+        if Piece.color(p) == color then
+            if not self:is_pinned(pos) then
+                local defs = self.defs[Piece.type(p)](self, p, pos)
+                for _, dst in ipairs(defs) do
+                    map[dst] = true
                 end
             end
         end
@@ -1114,9 +1220,7 @@ function chess:load_fen(fen)
             if c == '-' then break end
 
             local color = is_uppercase(c) and WHITE or BLACK
-            c = string.upper(c)
-
-            local side = ({ K = KINGSIDE, Q = QUEENSIDE })[c]
+            local side = ({ ['K'] = KINGSIDE, ['Q'] = QUEENSIDE })[string.upper(c)]
             assert(side ~= nil, 'invalid input')
             self.castling_right[color][side] = true
         end
@@ -1139,6 +1243,7 @@ function chess:load_fen(fen)
         self.turn = tonumber(str)
     end
 
+    -- parse FEN
     local t = { pboard, pside, pcastle, penpassant, phalfclock, pturn }
     local step = 1
     for part in string.gmatch(fen, "%S+") do
@@ -1146,16 +1251,24 @@ function chess:load_fen(fen)
         step = step + 1
     end
 
+    -- Postprocessing
+
     -- find kings
     for i, p in ipairs(self.board) do
-        if Piece.class(p) == KING then
-            self.king_pos[Piece.side(p)] = pos(i)
+        if Piece.type(p) == KING then
+            self.king_pos[Piece.color(p)] = pos(i)
         end
     end
 
     -- find attcked squares
-    self.attacked[WHITE] = self:gen_attack(BLACK)
-    self.attacked[BLACK] = self:gen_attack(WHITE)
+    self.attacked[WHITE] = self:attack_map(BLACK)
+    self.attacked[BLACK] = self:attack_map(WHITE)
+
+    for _, color in ipairs{WHITE, BLACK} do
+        if chess:is_checked(color) then
+            log(COLOR_NAME[color], "is checked")
+        end
+    end
 end
 
 -- Screen Position Functions --
@@ -1209,7 +1322,7 @@ end
 -- click event
 function love.mousepressed(x, y, button)
     if button == 1 then
-        local pos = Pos.make(yr(y), xf(x))
+        local pos = Pos.make(xf(x), yr(y))
         if Pos.in_bound(pos) then
             sel:click(pos)
         end
@@ -1222,6 +1335,71 @@ function love.filedropped(file)
     local bs, _ = file:read()
     reset_game()
     chess:load_fen(bs)
+end
+
+-- Click Interface --
+
+sel = {}
+
+function sel:reset()
+    self.state = 'unsel'
+    self.selected = nil
+    self.moves = nil
+    self.move = nil
+end
+
+function sel:select(pos)
+    self.state = 'selected'
+    self.selected = pos
+    self.moves = chess:legal_move(pos)
+end
+
+function sel:promotion(m)
+    self.state = 'promotion'
+    self.move = m
+end
+
+-- Main logic of select UI
+function sel:click(pos)
+    if self.state == 'unsel' and chess:get_color(pos) == chess.side then
+        self:select(pos)
+
+    elseif self.state == 'selected' then
+        if self.selected == pos then -- reset selection by clicking the same sqaure
+            self:reset()
+        else
+            local m = find(function (m) return pos == Move.sel(m) end, self.moves)
+
+            if m ~= nil then -- move
+                local selp = chess:get_piece(self.selected)
+                if Piece.type(selp) == PAWN
+                    and Pos.rank(pos) == BACKRANK[OPPONENT[chess.side]] then -- promotion
+                    self:promotion(Move.sel(m))
+                    return
+                end
+
+                chess:take_turn(m)
+                self:reset()
+            end
+
+            if not moved and chess:get_color(pos) == chess.side then -- reselect
+                self:select(pos)
+            end
+        end
+
+    elseif self.state == 'promotion' then
+        local i = Pos.file(pos)
+        local m
+        if Pos.rank(pos) == 5 and 2 <= i and i <= 6 then
+            local piece = self.pieces[i-2]
+            m = Move.to_promotion(self.move, piece)
+        else
+            m = self.move -- move without promotion
+        end
+
+        chess:take_turn(m)
+        self:reset()
+    end
 end
 
 -- Drawing Functions --
@@ -1243,10 +1421,10 @@ end
 
 -- draw a piece p at (x, y)
 function Piece.draw(x, y, p)
-    x = x + 9
-    y = y + 9
-    local color = Piece.side(p)
-    local class = Piece.class(p)
+    x = x + SPRITE_POS
+    y = y + SPRITE_POS
+    local color = Piece.color(p)
+    local class = Piece.type(p)
 
     G.setColor(1, 1, 1)
     G.draw(SPRITES[color][class], x, y)
@@ -1284,8 +1462,8 @@ function chess:draw()
             draw_square(rank, file, color)
 
             -- piece
-            local p = self:get_piece(Pos.make(rank, file))
-            if not Piece.is_none(p) then
+            local p = self:get_piece(Pos.make(file, rank))
+            if Piece.type(p) ~= NONE then
                 Piece.draw(fx(file), ry(rank), p)
             end
         end
@@ -1296,11 +1474,11 @@ end
 
 -- promotion window
 function sel:draw_promotion_ui()
-    G.setColor(self.promotion_color)
+    G.setColor(PROMOTION_COLOR)
     G.rectangle('fill', fx(1), ry(5), 4*SQUARE_SIZE, SQUARE_SIZE)
 
     for f = 3, 6 do
-        local p = Piece.make(chess.side, self.pieces[f-2])
+        local p = Piece.make(chess.side, PROMOTION_PIECES[f-2])
         Piece.draw(fx(f), ry(5), p)
     end
     
@@ -1308,19 +1486,19 @@ end
 
 -- draw move candidates
 function sel:draw_options()
-    G.setColor(self.color)
+    G.setColor(SEL_COLOR)
     for _, m in ipairs(self.moves) do
         local dst = Move.sel(m)
         local x = fx(Pos.file(dst))
         local y = ry(Pos.rank(dst))
 
-        G.circle('fill', mid(x), mid(y), self.radius)
+        G.circle('fill', mid(x), mid(y), SEL_RADIUS)
     end
 end
 
 function sel:draw()
     if self.selected ~= nil then
-        G.setColor(self.color)
+        G.setColor(SEL_COLOR)
         G.setLineWidth(5)
         G.rectangle('line',
             fx(Pos.file(self.selected)), ry(Pos.rank(self.selected)),
@@ -1336,16 +1514,20 @@ function sel:draw()
     end
 end
 
--- debug: draw squares attacked by
-function draw_attack(map)
-    G.setColor(.5, 1, .5)
-    for i, v in ipairs(map) do
-        local p = pos(i)
-        local x = fx(Pos.file(p))
-        local y = ry(Pos.rank(p))
+function draw_mark(pos, color)
+    G.setColor(color)
+    local x = fx(Pos.file(pos))
+    local y = ry(Pos.rank(pos))
 
-        if #v > 0 then
-            G.circle('fill', mid(x), mid(y), 10)
+    G.circle('fill', mid(x), mid(y), 5)
+end
+
+-- debug
+function draw_attackmap(map, color)
+    local c = {{ .8, .5, .5 }, {.5, .8, .5}}
+    for i, ms in ipairs(map) do
+        if #ms > 0 then
+            draw_mark(pos(i), c[color])
         end
     end
 end
