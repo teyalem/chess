@@ -1307,6 +1307,7 @@ end
 
 function love.load()
     reset_game()
+    update_board()
 end
 
 function love.quit()
@@ -1325,6 +1326,7 @@ function love.mousepressed(x, y, button)
         local pos = Pos.make(xf(x), yr(y))
         if Pos.in_bound(pos) then
             sel:click(pos)
+            update_board()
         end
     end
 end
@@ -1335,6 +1337,7 @@ function love.filedropped(file)
     local bs, _ = file:read()
     reset_game()
     chess:load_fen(bs)
+    update_board()
 end
 
 -- Click Interface --
@@ -1405,6 +1408,15 @@ end
 -- Drawing Functions --
 
 local G = love.graphics
+
+canvas = G.newCanvas()
+
+function update_board()
+    canvas:renderTo(function ()
+        chess:draw()
+        sel:draw()
+    end)
+end
 
 -- draw a square of board
 function draw_square(rank, file, color)
@@ -1533,6 +1545,6 @@ function draw_attackmap(map, color)
 end
 
 function love.draw()
-    chess:draw()
-    sel:draw()
+    G.setColor(1, 1, 1)
+    G.draw(canvas, 0, 0)
 end
