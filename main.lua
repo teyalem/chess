@@ -789,6 +789,8 @@ function chess:is_pseudo_legal(m)
 end
 
 -- chess:is_legal(move) returns true if the move is legal.
+-- FIXME: chess:find_raydir function can be replaced to cheapper
+-- chess:comp_raydir function.
 function chess:is_legal(m)
     -- legal is a subset of pseudo legal.
     if not self:is_pseudo_legal(m) then return false end
@@ -815,8 +817,12 @@ function chess:is_legal(m)
     end
 
     if m.t == MOVE_PUSH or m.t == MOVE_PIECE or m.t == MOVE_PROMOTION then
+        local dst = Move.dst(m)
+
+        -- special checks for king. Because kings are special.
         if Piece.type(m.piece) == KING then
             local defmap = self:defend_map(OPPONENT[color])
+            -- NOTE: could just use blocks_ray?
             local in_ray = exists( -- opponent is reachable after moving?
                 function (atk)
                     local d = self:find_raydir(atk, kpos)
@@ -824,13 +830,16 @@ function chess:is_legal(m)
                 end,
                 self.attacked[color][kpos])
 
-            return not (defmap[m.dst] or in_ray)
+            return not (defmap[dst] or in_ray)
 
-        elseif self:is_checked(color) then
-            local dst = Move.dst(m)
-            return blocks_ray(dst) or captures(dst)
-        else
-            return not self:is_pinned(m.src)
+        else -- other pieces
+            if blocks_ray(dst) then
+                return true
+            elseif self:is_checked(color) then
+                return captures(dst)
+            else
+                return not self:is_pinned(m.src)
+            end
         end
 
     elseif m.t == MOVE_CASTLE then
@@ -850,6 +859,8 @@ function chess:is_legal(m)
         if self:is_checked(color) then
             return blocks_ray(m.dst) or captures(m.cap)
         else
+            -- collect opponent rooks and queens to check horizontal
+            -- pinning of same rank piece.
             local atks = self:collect_squares(OPPONENT[color], {ROOK, QUEEN})
             return not self:is_pinned(m.src, {m.cap}, atks)
         end
@@ -1073,8 +1084,9 @@ function chess:legal_move(pos)
     return self:collect_moves(self.moves, pos)
 end
 
--- generate attack map of color.
--- map[i] = n means square i is being threatened by n adversary pieces.
+-- chess:attack_map(color) generates map whose squares have attackers'
+-- positions. It is used to check if opponent king is in check or
+-- absolute pinning.
 function chess:attack_map(color) -- int -> Pos.t matrix
     local map = Box.init(empty)
 
@@ -1094,6 +1106,8 @@ function chess:attack_map(color) -- int -> Pos.t matrix
 
     return map
 end
+
+-- Piece's defences --
 
 function chess:pawn_def(p, pos)
     local r = RD[PAWN_DIR[Piece.color(p)]]
@@ -1154,6 +1168,8 @@ chess.defs = {
     chess.king_def
 }
 
+-- chess:defend_map generates a map that squares are marked if they are
+-- defended by color's pieces. It is used to check king's escape routes.
 function chess:defend_map(color)
     local map = Box.make(false)
 
