@@ -1,12 +1,3 @@
-GAME = {
-    name = "LőChess",
-    author = "Hyeonung Baek (teyalem)",
-    version = 0.9
-}
-
--- print debug infos?
-DEBUG = true
-
 -- Goals: (not being done this way)
 -- - [x] draw board
 -- - [x] move pieces
@@ -56,6 +47,9 @@ DEBUG = true
 -- 2. Module names are in CamelCase.
 -- 3. function names are in snake_case.
 
+-- print debug infos?
+DEBUG = true
+
 -- List Functions --
 -- A list is a table that has only integer indexes and iteratable with
 -- ipairs.
@@ -103,8 +97,7 @@ function find(f, xs)
     return nil
 end
 
--- append contents of bs to as.
--- return as after appending
+-- Concantenate two arrays.
 function append(as, bs)
     for _, v in ipairs(bs) do
         as[#as+1] = v
@@ -112,6 +105,8 @@ function append(as, bs)
     return as
 end
 
+-- exists(f, xs) checks if one of the elements of xs qualifies predicate
+-- f. That is, it returns f(xs[1]) or f(xs[2]) or ... or f(xs[#xs]).
 function exists(f, xs)
     for _, v in ipairs(xs) do
         if f(v) then return true end
@@ -119,19 +114,13 @@ function exists(f, xs)
     return false
 end
 
+-- for_all(f, xs) checks if all of the elements of xs qualifies predicate
+-- f. That is, it returns f(xs[1]) and f(xs[2]) and ... and f(xs[#xs]).
 function for_all(f, xs)
     for _, v in ipairs(xs) do
         if not f(v) then return false end
     end
     return true
-end
-
-function reverse_table(t)
-    local o = {}
-    for k, v in pairs(t) do
-        o[v] = k
-    end
-    return o
 end
 
 -- creates a new empty table. use with init(f).
@@ -141,19 +130,12 @@ function empty(_)
     return {nil}
 end
 
--- Utility functions --
-
--- print debug
-function log(...)
-    if DEBUG then print(...) end
-end
-
-function is_uppercase(c)
-    return 'A' <= c and c <= 'Z'
-end
-
-function is_digit(c)
-    return '0' <= c and c <= '9'
+function reverse_table(t)
+    local o = {}
+    for k, v in pairs(t) do
+        o[v] = k
+    end
+    return o
 end
 
 -- CONSTS --
@@ -173,6 +155,7 @@ QUEEN = 5
 KING = 6
 
 -- Piece types (for algebraic notation) and names
+-- TODO: PSYM (Piece symbol) would be more accurate name.
 PTYPE = { 'P', 'N', 'B', 'R', 'Q', 'K' }
 PTYPE_REV = reverse_table(PTYPE)
 PNAME = { 'pawn', 'knight', 'bishop', 'rook', 'queen', 'king' }
@@ -207,12 +190,11 @@ BISHOP_DIR = init(4, function (n) return 2*n + 2 end) -- diagonals
 ROOK_DIR = init(4, function (n) return 2*n + 1 end) -- horizontal and vertical
 QUEEN_DIR = init(8, function (n) return n + 1 end)
 
--- Move Encodings --
+-- Move Types --
 MOVE_PUSH = 1 -- pawn push
 MOVE_PIECE = 2 -- piece move (quiet or capture)
 MOVE_CASTLE = 3 -- castling
 MOVE_ENPASSANT = 4 -- en passant
-MOVE_PROMOTION = 5 -- promotion
 
 -- queenside and kingside
 QUEENSIDE = 1 -- a to d
@@ -271,29 +253,27 @@ BCOLOR = {
     1, 1, 1, 1, 1, 1, 1, 1,
 }
 
--- GUI --
-
-SQUARE_SIZE = 50 -- size of each square
-
--- Selection Settings --
-
-SEL_COLOR = {1, .3, .3}
-SEL_RADIUS = SQUARE_SIZE/2 - 4
-PROMOTION_COLOR = {.5, .5, .5}
-PROMOTION_PIECES = { KNIGHT, BISHOP, ROOK, QUEEN } -- piece to promote to
-
--- Sprites --
-
-SPRITE_SIZE = 32
-SPRITE_POS = (SQUARE_SIZE - SPRITE_SIZE) / 2
-SPRITES = { [WHITE] = {}, [BLACK] = {} }
-
 -- load sprites
 for color, cname in ipairs(COLOR_NAME) do
     for i, v in ipairs(PNAME) do
         local path = string.format("assets/%s_%s.png", v, cname)
         SPRITES[color][i] = love.graphics.newImage(path)
     end
+end
+
+-- Utility functions --
+
+-- print debug
+function log(...)
+    if DEBUG then print(...) end
+end
+
+function is_uppercase(c)
+    return 'A' <= c and c <= 'Z'
+end
+
+function is_digit(c)
+    return '0' <= c and c <= '9'
 end
 
 -- Position Module --
@@ -459,22 +439,7 @@ function Move.enpassant(p, src, cap, dst)
     }
 end
 
--- NOTE: not used in this version
-function Move.promotion(p, src, dst, x, pro)
-    return {
-        t = MOVE_PROMOTION,
-        piece = p,
-        src = src,
-        dst = dst,
-        captures = x,
-        promotion = pro,
-    }
-end
-
 function Move.to_promotion(m, p)
-    assert(m.t == MOVE_PIECE)
-    m.t = MOVE_PROMOTION
-    m.captures = true
     m.promotion = p
     return m
 end
@@ -490,11 +455,10 @@ function Move.dst(m)
         local color = Piece.color(m.piece)
         return Pos.slide(m.src, PAWN_DIR[color], m.distance)
     elseif m.t == MOVE_PIECE
-        or m.t == MOVE_PROMOTION
         or m.t == MOVE_ENPASSANT then
         return m.dst
     elseif m.t == MOVE_CASTLE then
-        return Pos.make(CASTLE_FILE[m.side][1], BACKRANK[m.color])
+        return Pos.make(ROOK_FILE[m.side], BACKRANK[m.color])
     end
     error("invalid move type")
 end
@@ -505,7 +469,6 @@ function Move.sel(m)
         local color = Piece.color(m.piece)
         return Pos.slide(m.src, PAWN_DIR[color], m.distance)
     elseif m.t == MOVE_PIECE
-        or m.t == MOVE_PROMOTION
         or m.t == MOVE_ENPASSANT then
         return m.dst
     elseif m.t == MOVE_CASTLE then
@@ -515,41 +478,69 @@ function Move.sel(m)
 end
 
 -- to_algebraic returns the Algebraic Notation of m.
--- TODO: more accurate algebraic notation (need to check board)
-function Move.to_algebraic(m)
+-- color(m) == color(atk_map)
+function Move.to_algebraic(m, atk_map)
+    local function find_same_dst_sq(p, src, dst)
+        local moves = filter( 
+            function(v)
+                return v.piece
+                and Piece.type(v.piece) == Piece.type(p)
+                and v.src ~= src
+            end,
+            atk_map[dst])
+
+        return map(function(v) return v.src end, moves)
+    end
+
+    local function distinct_part(pos, others)
+        local f = Pos.file(pos)
+        local r = Pos.rank(pos)
+
+        if for_all(function(p) return Pos.file(p) ~= f end, others) then
+            return FILE[Pos.file(pos)]
+        elseif for_all(function(p) return Pos.rank(p) ~= r end, others) then
+            return tostring(Pos.rank(pos))
+        else
+            return Pos.to_string(pos)
+        end
+    end
+
     local function format_move(p, src, dst, x, promotion)
+        local piece_symbol = PTYPE[p]
+
+        local samedsts = find_same_dst_sq(p, src, dst)
+        local from_square
+        if #samedsts > 0 then
+            from_square = distinct_part(src, samedsts)
+        else
+            from_square = ''
+        end
+
         local x = x and 'x' or ''
-        local d = Pos.to_string(m.dst)
 
-        local class = Piece.type(p)
-        local s = PTYPE[class]
-        if class == PAWN or promotion then
-            s = captured and FILE[Pos.file(src)] or ""
-        end
+        local to_square = Pos.to_string(dst)
 
-        local pro = ""
-        if promotion then
-            pro = '=' .. PTYPE[Piece.type(p)]
-        end
+        local promoted_to = promotion and ('=' .. PTYPE[promotion]) or ''
 
-        return string.format("%s%s%s%s", s, x, d, pro)
+        return string.format("%s%s%s%s%s",
+            piece_symbol, source_square, x, to_square, promoted_to)
     end
 
     if m.t == MOVE_PUSH then
         local color = Piece.color(m.piece)
         local dst = Pos.slide(m.src, PAWN_DIR[color], m.distance)
-        return Pos.to_string(dst)
+        local promoted_to = m.promotion and ('=' .. PTYPE[m.promotion]) or ''
+
+        return Pos.to_string(dst) .. promoted_to
     elseif m.t == MOVE_PIECE then
         return format_move(m.piece, m.src, m.dst, m.captures)
     elseif m.t == MOVE_CASTLE then
         return ({"O-O-O", "O-O"})[m.side]
     elseif m.t == MOVE_ENPASSANT then
         return format_move(m.piece, m.src, m.dst, true)
-    elseif m.t == MOVE_PROMOTION then
-        return format_move(m.piece, m.src, m.dst, m.captures)
     end
 
-    return ""
+    error("Invalid Move")
 end
 
 -- 8x8 Box --
@@ -764,7 +755,7 @@ function chess:is_pseudo_legal(m)
         end
         return true
 
-    elseif m.t == MOVE_PIECE or m.t == MOVE_PROMOTION then
+    elseif m.t == MOVE_PIECE then
         if Piece.type(m.piece) == PAWN then -- pawn's MOVE_PIECE is always capture
             return self:can_capture(m.dst, color)
         else
@@ -816,7 +807,7 @@ function chess:is_legal(m)
             self.attacked[color][kpos])
     end
 
-    if m.t == MOVE_PUSH or m.t == MOVE_PIECE or m.t == MOVE_PROMOTION then
+    if m.t == MOVE_PUSH or m.t == MOVE_PIECE then
         local dst = Move.dst(m)
 
         -- special checks for king. Because kings are special.
@@ -923,17 +914,26 @@ function chess:domove(m)
         end
     end
 
+    local function promotion(p, promoted_to)
+        if promoted_to ~= nil then
+            p.t = promoted_to -- FIXME: abstraction needed
+        end
+    end
+
     if m.t == MOVE_PUSH then
         local dst = Pos.slide(m.src, PAWN_DIR[color], m.distance)
 
+        promotion(m.piece, m.promotion)
         move(m.piece, m.src, dst)
-        if m.distance == 2 then -- double push
+
+        if m.distance == 2 then -- save en passant chance
             self.dpush_file[color] = Pos.file(m.src)
         end
 
     elseif m.t == MOVE_PIECE then
         if m.captures then capture(m.piece, m.dst) end
         update_state(m.piece, m.src, m.dst)
+        promotion(m.piece, m.promotion)
         move(m.piece, m.src, m.dst)
 
     elseif m.t == MOVE_CASTLE then
@@ -955,11 +955,6 @@ function chess:domove(m)
         local p = self:get_piece(m.cap)
         capture(p, m.cap)
         move(m.piece, m.src, m.dst)
-
-    elseif m.t == MOVE_PROMOTION then
-        if m.captures then capture(m.dst) end
-        move(m.piece, m.src, m.dst)
-        m.p.t = m.promotion -- FIXME: abstraction needed
     end
 end
 
@@ -1095,9 +1090,9 @@ function chess:attack_map(color) -- int -> Pos.t matrix
         local pos = pos(i)
 
         if Piece.color(p) == color
-            and Piece.type(p) ~= KING then -- king cannot attack
+            and Piece.type(p) ~= KING then -- king cannot attack the other king
             for _, m in ipairs(self:legal_move(pos)) do
-                if m.t == MOVE_PIECE or m.t == MOVE_PROMOTION then
+                if m.t == MOVE_PIECE then
                     table.insert(map[m.dst], pos)
                 end
             end
@@ -1393,12 +1388,11 @@ function sel:click(pos)
                 local selp = chess:get_piece(self.selected)
                 if Piece.type(selp) == PAWN
                     and Pos.rank(pos) == BACKRANK[OPPONENT[chess.side]] then -- promotion
-                    self:promotion(Move.sel(m))
-                    return
+                    self:promotion(m)
+                else
+                    chess:take_turn(m)
+                    self:reset()
                 end
-
-                chess:take_turn(m)
-                self:reset()
             end
 
             if not moved and chess:get_color(pos) == chess.side then -- reselect
