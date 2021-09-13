@@ -21,11 +21,9 @@ PROMOTION_PIECES = { KNIGHT, BISHOP, ROOK, QUEEN } -- piece to promote to
 
 SPRITE_SIZE = 32
 SPRITE_POS = (SQUARE_SIZE - SPRITE_SIZE) / 2
-SPRITES = { [WHITE] = {}, [BLACK] = {} }
 
 function love.conf(t)
     t.window.title = string.format("%s %f", GAME.name, GAME.version)
     t.window.width = SCREEN_WIDTH
     t.window.height = SCREEN_HEIGHT
 end
-

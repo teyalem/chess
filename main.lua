@@ -140,12 +140,12 @@ end
 
 -- CONSTS --
 
--- Color: 1 is white, 2 is black
+-- Colors
 WHITE = 1
 BLACK = 2
 COLOR_NAME = { "white", "black" }
 
--- Piece: 0 is none, 1 is pawn, 2 is knight, 3 is bishop, 4 is rook, 5 is queen, 6 is king
+-- Pieces
 NONE = 0
 PAWN = 1
 KNIGHT = 2
@@ -155,9 +155,8 @@ QUEEN = 5
 KING = 6
 
 -- Piece types (for algebraic notation) and names
--- TODO: PSYM (Piece symbol) would be more accurate name.
-PTYPE = { 'P', 'N', 'B', 'R', 'Q', 'K' }
-PTYPE_REV = reverse_table(PTYPE)
+PSYM = { '', 'N', 'B', 'R', 'Q', 'K' }
+PSYM_REV = reverse_table(PSYM)
 PNAME = { 'pawn', 'knight', 'bishop', 'rook', 'queen', 'king' }
 
 -- Files --
@@ -254,6 +253,7 @@ BCOLOR = {
 }
 
 -- load sprites
+SPRITES = { [WHITE] = {}, [BLACK] = {} }
 for color, cname in ipairs(COLOR_NAME) do
     for i, v in ipairs(PNAME) do
         local path = string.format("assets/%s_%s.png", v, cname)
@@ -479,7 +479,12 @@ end
 
 -- to_algebraic returns the Algebraic Notation of m.
 -- color(m) == color(atk_map)
-function Move.to_algebraic(m, atk_map)
+-- checked, checkamted: bool
+-- color(checked) == color(checkmated) == opponent color(m)
+function Move.to_algebraic(m, atk_map, checked, checkmated)
+    -- check sign
+    local plus = checkmated and '#' or (checked and '+' or '')
+
     local function find_same_dst_sq(p, src, dst)
         local moves = filter( 
             function(v)
@@ -492,13 +497,15 @@ function Move.to_algebraic(m, atk_map)
         return map(function(v) return v.src end, moves)
     end
 
-    local function distinct_part(pos, others)
-        local f = Pos.file(pos)
-        local r = Pos.rank(pos)
+    -- all different
+    local function ad(f, x, xs)
+        return for_all(function(o) return f(o) ~= x end, xs)
+    end
 
-        if for_all(function(p) return Pos.file(p) ~= f end, others) then
+    local function distinct_part(pos, others)
+        if ad(Pos.file, Pos.file(pos), others) then
             return FILE[Pos.file(pos)]
-        elseif for_all(function(p) return Pos.rank(p) ~= r end, others) then
+        elseif ad(Pos.rank, Pos.rank(pos), others) then
             return tostring(Pos.rank(pos))
         else
             return Pos.to_string(pos)
@@ -506,30 +513,26 @@ function Move.to_algebraic(m, atk_map)
     end
 
     local function format_move(p, src, dst, x, promotion)
-        local piece_symbol = PTYPE[p]
+        local piece_symbol = PSYM[Piece.type(p)]
 
         local samedsts = find_same_dst_sq(p, src, dst)
-        local from_square
+        local from_square = ''
         if #samedsts > 0 then
             from_square = distinct_part(src, samedsts)
-        else
-            from_square = ''
         end
 
         local x = x and 'x' or ''
-
         local to_square = Pos.to_string(dst)
+        local promoted_to = promotion and ('=' .. PSYM[promotion]) or ''
 
-        local promoted_to = promotion and ('=' .. PTYPE[promotion]) or ''
-
-        return string.format("%s%s%s%s%s",
-            piece_symbol, source_square, x, to_square, promoted_to)
+        return string.format("%s%s%s%s%s%s",
+            piece_symbol, from_square, x, to_square, promoted_to, plus)
     end
 
     if m.t == MOVE_PUSH then
         local color = Piece.color(m.piece)
         local dst = Pos.slide(m.src, PAWN_DIR[color], m.distance)
-        local promoted_to = m.promotion and ('=' .. PTYPE[m.promotion]) or ''
+        local promoted_to = m.promotion and ('=' .. PSYM[m.promotion]) or ''
 
         return Pos.to_string(dst) .. promoted_to
     elseif m.t == MOVE_PIECE then
@@ -624,16 +627,6 @@ function chess:end_turn()
     self.side = OPPONENT[self.side]
     if self.side == WHITE then -- turn went back to white
         self.turn = self.turn + 1
-    end
-
-    for _, color in ipairs{WHITE, BLACK} do
-        if chess:is_checked(color) then
-            log(COLOR_NAME[color], "is checked")
-        end
-
-        if chess:is_checkmated(color) then
-            self.winner = OPPONENT[color]
-        end
     end
 end
 
@@ -1184,10 +1177,25 @@ function chess:defend_map(color)
     return map
 end
 
+-- halfturn
 function chess:take_turn(m)
-    self.log[#self.log+1] = Move.to_algebraic(m) -- save log
+    local atkmap = self.attacked[OPPONENT[self.side]]
+
     chess:domove(m)
     chess:end_turn()
+
+    local checked = chess:is_checked(self.side)
+    local checkmated = chess:is_checkmated(self.side)
+
+    self.log[#self.log+1] = Move.to_algebraic(m, atkmap, checked, checkmated)
+
+    if checked then
+        log(COLOR_NAME[self.side], "is checked")
+    end
+
+    if checkmated then
+        self.winner = OPPONENT[self.side]
+    end
 end
 
 -- debug: print log
@@ -1201,7 +1209,7 @@ end
 function chess:load_fen(fen)
     local function ppiece(c)
         local color = is_uppercase(c) and WHITE or BLACK
-        local piece = PTYPE_REV[string.upper(c)]
+        local piece = PSYM_REV[string.upper(c)]
         return Piece.make(color, piece)
     end
 
@@ -1446,10 +1454,10 @@ function Piece.draw(x, y, p)
     x = x + SPRITE_POS
     y = y + SPRITE_POS
     local color = Piece.color(p)
-    local class = Piece.type(p)
+    local ptype = Piece.type(p)
 
     G.setColor(1, 1, 1)
-    G.draw(SPRITES[color][class], x, y)
+    G.draw(SPRITES[color][ptype], x, y)
 end
 
 -- win message when the winner is choosen.
