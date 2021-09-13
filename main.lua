@@ -1,47 +1,3 @@
--- Goals: (not being done this way)
--- - [x] draw board
--- - [x] move pieces
--- - [x] turn
--- - [x] pieces' movements
---   + [x] calculate possible moves
---   + [x] display possible moves
---   + [x] restrict move
--- - [x] check and checkmate
---   + [x] generate attack map
---   + [x] determine check & checkmate
--- - [x] restrict moves
---   + [x] check
---   + [x] absolute pins
--- - [x] save & print move log
--- - [x] special rules
---   + [x] refactor functions to return moves (instead of positions)
---   + [x] castling
---   + [x] en passant
---   + [x] promotion
---     - [x] implement piece selection window
--- - [x] win prompt
--- - [x] more well encoded move and better move generator
---   + [x] wipe out duplicated codes
---   + [x] implement better move generator
--- - [x] refactor chess:domove and chess:is_legal
--- - [x] pieces' sprites
-
--- Future Goals:
--- - [ ] UI rework
---   + [ ] screen size
---   + [ ] window (checkmate/promotion)
---   + [ ] menus
---   + [ ] resizing
--- - [ ] map rotation
--- - [ ] stalemate
--- - [ ] AI (maybe)
--- - [ ] packaging
-
--- DONE: refactor functions to use MOVE_* enum.
--- DONE: feature - load chess board from file (args or drag-and-drop)
--- DONE: add Box module for boards, attack maps, etc.
--- DONE: add sprite
-
 -- Naming Conventions --
 -- 1. Global const variables are in CONSTANT_CASE.
 -- 2. Module names are in CamelCase.
@@ -130,6 +86,8 @@ function empty(_)
     return {nil}
 end
 
+-- reverse_table(t) returns a table rt satisfying
+-- t[k] = v <=> rt[v] = k.
 function reverse_table(t)
     local o = {}
     for k, v in pairs(t) do
@@ -154,7 +112,7 @@ ROOK = 4
 QUEEN = 5
 KING = 6
 
--- Piece types (for algebraic notation) and names
+-- Piece symbols (for algebraic notation) and names
 PSYM = { '', 'N', 'B', 'R', 'Q', 'K' }
 PSYM_REV = reverse_table(PSYM)
 PNAME = { 'pawn', 'knight', 'bishop', 'rook', 'queen', 'king' }
