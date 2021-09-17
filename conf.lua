@@ -7,8 +7,29 @@ GAME = {
 -- GUI --
 
 SQUARE_SIZE = 50 -- size of each square
-SCREEN_WIDTH = 8 * SQUARE_SIZE
-SCREEN_HEIGHT = 8 * SQUARE_SIZE
+
+-- Board --
+BOARD_X = 0
+BOARD_Y = 0
+BOARD_WIDTH = 8 * SQUARE_SIZE
+BOARD_HEIGHT = 8 * SQUARE_SIZE
+
+-- Log --
+LOG_X = BOARD_WIDTH
+LOG_Y = 0
+LOG_HALFWIDTH = 50
+LOG_WIDTH = 2 * LOG_HALFWIDTH
+TEXT_SIZE = 20
+
+-- Screen --
+-- Orientation:
+-- +--------+---+
+-- |        |   |
+-- | BOARD  |LOG|
+-- |        |   |
+-- +--------+---+
+SCREEN_WIDTH = BOARD_WIDTH + LOG_WIDTH
+SCREEN_HEIGHT = BOARD_HEIGHT
 
 -- Selection Settings --
 

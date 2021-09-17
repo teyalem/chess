@@ -210,6 +210,8 @@ BCOLOR = {
     1, 1, 1, 1, 1, 1, 1, 1,
 }
 
+-- Graphical Assets --
+
 -- load sprites
 SPRITES = { [WHITE] = {}, [BLACK] = {} }
 for color, cname in ipairs(COLOR_NAME) do
@@ -218,6 +220,16 @@ for color, cname in ipairs(COLOR_NAME) do
         SPRITES[color][i] = love.graphics.newImage(path)
     end
 end
+
+-- default font
+FONT = love.graphics.newFont("assets/FiraSans-Regular.ttf", TEXT_SIZE)
+love.graphics.setFont(FONT)
+
+-- screen canvases
+CANVAS = {
+    board = love.graphics.newCanvas(),
+    log = love.graphics.newCanvas(),
+}
 
 -- Utility functions --
 
@@ -574,20 +586,6 @@ function chess:reset()
     self.attacked = { Box.init(empty), Box.init(empty) }
 end
 
--- end current side's turn
-function chess:end_turn()
-    -- update attack map
-    self.attacked[BLACK] = self:attack_map(WHITE)
-    self.attacked[WHITE] = self:attack_map(BLACK)
-
-    self.dpush_file[OPPONENT[self.side]] = 0 -- clear en passant right
-
-    self.side = OPPONENT[self.side]
-    if self.side == WHITE then -- turn went back to white
-        self.turn = self.turn + 1
-    end
-end
-
 function chess:get_piece(pos)
     assert(Pos.in_bound(pos))
     return self.board[pos]
@@ -809,104 +807,6 @@ function chess:is_legal(m)
     end
 
     error("Invalid Move") -- the move must be one of above
-end
-
-function chess:is_checkmated(color)
-    local kpos = self.king_pos[color]
-    local atks = self.attacked[color][kpos]
-
-    if #atks == 0 then
-        return false
-
-    elseif #atks == 1 then -- single check; check there's no legal move
-        for i, p in ipairs(self.board) do
-            if Piece.color(p) == color then
-                local ms = self:legal_move(pos(i))
-                if #ms > 0 then return false end
-            end
-        end
-        return true
-
-    elseif #atks >= 2 then -- double check; check escape square
-        local km = self:legal_move(kpos)
-        return #km == 0
-    end
-end
-
--- domove(m) performs the move m. It assumes the input move m is legal.
-function chess:domove(m)
-    local color = Move.color(m)
-
-    -- quiet move
-    local function move(p, src, dst)
-        self.board[dst] = p
-        self.board[src] = Piece.none
-    end
-
-    -- capture piece at pos
-    local function capture(p, pos)
-        self.captured[#self.captured+1] = p
-        self.board[pos] = Piece.none
-    end
-
-    local function update_state(p, src, dst)
-        local pt = Piece.type(p)
-
-        if pt == KING then
-            self.king_pos[color] = dst
-            self.castling_right[color] = {false, false}
-
-        elseif pt == ROOK then
-            local i = Pos.fileside(src)
-            local pos = Pos.make(ROOK_FILE[i], BACKRANK[color])
-            if self.castling_right[color][i] and src == pos then
-                self.castling_right[color][i] = false
-            end
-        end
-    end
-
-    local function promotion(p, promoted_to)
-        if promoted_to ~= nil then
-            p.t = promoted_to -- FIXME: abstraction needed
-        end
-    end
-
-    if m.t == MOVE_PUSH then
-        local dst = Pos.slide(m.src, PAWN_DIR[color], m.distance)
-
-        promotion(m.piece, m.promotion)
-        move(m.piece, m.src, dst)
-
-        if m.distance == 2 then -- save en passant chance
-            self.dpush_file[color] = Pos.file(m.src)
-        end
-
-    elseif m.t == MOVE_PIECE then
-        if m.captures then capture(m.piece, m.dst) end
-        update_state(m.piece, m.src, m.dst)
-        promotion(m.piece, m.promotion)
-        move(m.piece, m.src, m.dst)
-
-    elseif m.t == MOVE_CASTLE then
-        -- uses hardcoded data
-        local function f(f) return Pos.make(f, BACKRANK[color]) end
-        local kpos = f(KING_FILE)
-        local rpos = f(ROOK_FILE[m.side])
-        local np = CASTLE_FILE[m.side]
-        local nkpos = f(np[1])
-        local nrpos = f(np[2])
-        local k = self:get_piece(kpos)
-        local r = self:get_piece(rpos)
-
-        update_state(k, kpos, nkpos) -- remove castling right
-        move(k, kpos, nkpos)
-        move(r, rpos, nrpos)
-
-    elseif m.t == MOVE_ENPASSANT then
-        local p = self:get_piece(m.cap)
-        capture(p, m.cap)
-        move(m.piece, m.src, m.dst)
-    end
 end
 
 -- Move Generating Functions --
@@ -1135,6 +1035,119 @@ function chess:defend_map(color)
     return map
 end
 
+-- chess:is_checkmated(color) returns true if player color is checkmated.
+function chess:is_checkmated(color)
+    local kpos = self.king_pos[color]
+    local atks = self.attacked[color][kpos]
+
+    if #atks == 0 then
+        return false
+
+    elseif #atks == 1 then -- single check; check there's no legal move
+        for i, p in ipairs(self.board) do
+            if Piece.color(p) == color then
+                local ms = self:legal_move(pos(i))
+                if #ms > 0 then return false end
+            end
+        end
+        return true
+
+    elseif #atks >= 2 then -- double check; check escape square
+        local km = self:legal_move(kpos)
+        return #km == 0
+    end
+end
+
+-- domove(m) performs the move m. It assumes the input move m is legal.
+function chess:domove(m)
+    local color = Move.color(m)
+
+    -- quiet move
+    local function move(p, src, dst)
+        self.board[dst] = p
+        self.board[src] = Piece.none
+    end
+
+    -- capture piece at pos
+    local function capture(p, pos)
+        self.captured[#self.captured+1] = p
+        self.board[pos] = Piece.none
+    end
+
+    local function update_state(p, src, dst)
+        local pt = Piece.type(p)
+
+        if pt == KING then
+            self.king_pos[color] = dst
+            self.castling_right[color] = {false, false}
+
+        elseif pt == ROOK then
+            local i = Pos.fileside(src)
+            local pos = Pos.make(ROOK_FILE[i], BACKRANK[color])
+            if self.castling_right[color][i] and src == pos then
+                self.castling_right[color][i] = false
+            end
+        end
+    end
+
+    local function promotion(p, promoted_to)
+        if promoted_to ~= nil then
+            p.t = promoted_to -- FIXME: abstraction needed
+        end
+    end
+
+    if m.t == MOVE_PUSH then
+        local dst = Pos.slide(m.src, PAWN_DIR[color], m.distance)
+
+        promotion(m.piece, m.promotion)
+        move(m.piece, m.src, dst)
+
+        if m.distance == 2 then -- save en passant chance
+            self.dpush_file[color] = Pos.file(m.src)
+        end
+
+    elseif m.t == MOVE_PIECE then
+        if m.captures then capture(m.piece, m.dst) end
+        update_state(m.piece, m.src, m.dst)
+        promotion(m.piece, m.promotion)
+        move(m.piece, m.src, m.dst)
+
+    elseif m.t == MOVE_CASTLE then
+        -- uses hardcoded data
+        local function f(f) return Pos.make(f, BACKRANK[color]) end
+        local kpos = f(KING_FILE)
+        local rpos = f(ROOK_FILE[m.side])
+        local np = CASTLE_FILE[m.side]
+        local nkpos = f(np[1])
+        local nrpos = f(np[2])
+        local k = self:get_piece(kpos)
+        local r = self:get_piece(rpos)
+
+        update_state(k, kpos, nkpos) -- remove castling right
+        move(k, kpos, nkpos)
+        move(r, rpos, nrpos)
+
+    elseif m.t == MOVE_ENPASSANT then
+        local p = self:get_piece(m.cap)
+        capture(p, m.cap)
+        move(m.piece, m.src, m.dst)
+    end
+end
+
+-- end current side's turn
+function chess:end_turn()
+    -- update attack map
+    self.attacked[BLACK] = self:attack_map(WHITE)
+    self.attacked[WHITE] = self:attack_map(BLACK)
+
+    self.dpush_file[OPPONENT[self.side]] = 0 -- clear en passant right
+
+    self.side = OPPONENT[self.side]
+    if self.side == WHITE then -- turn went back to white
+        self.turn = self.turn + 1
+    end
+end
+
 -- halfturn
 function chess:take_turn(m)
     local atkmap = self.attacked[OPPONENT[self.side]]
@@ -1275,48 +1288,6 @@ function yr(y)
     return 8 - math.floor(y/SQUARE_SIZE)
 end
 
--- Game Functions --
-
-function reset_game()
-    chess:reset()
-    sel:reset()
-end
-
-function love.load()
-    reset_game()
-    update_board()
-end
-
-function love.quit()
-    chess:print_log() -- debug
-end
-
-function love.keypressed(key)
-    if key == 'escape' then
-        love.event.quit()
-    end
-end
-
--- click event
-function love.mousepressed(x, y, button)
-    if button == 1 then
-        local pos = Pos.make(xf(x), yr(y))
-        if Pos.in_bound(pos) then
-            sel:click(pos)
-            update_board()
-        end
-    end
-end
-
--- board loading function
-function love.filedropped(file)
-    file:open('r')
-    local bs, _ = file:read()
-    reset_game()
-    chess:load_fen(bs)
-    update_board()
-end
-
 -- Click Interface --
 
 sel = {}
@@ -1359,9 +1330,8 @@ function sel:click(pos)
                     chess:take_turn(m)
                     self:reset()
                 end
-            end
 
-            if not moved and chess:get_color(pos) == chess.side then -- reselect
+            elseif chess:get_color(pos) == chess.side then -- reselect
                 self:select(pos)
             end
         end
@@ -1384,15 +1354,6 @@ end
 -- Drawing Functions --
 
 local G = love.graphics
-
-canvas = G.newCanvas()
-
-function update_board()
-    canvas:renderTo(function ()
-        chess:draw()
-        sel:draw()
-    end)
-end
 
 -- draw a square of board
 function draw_square(rank, file, color)
@@ -1418,24 +1379,6 @@ function Piece.draw(x, y, p)
     G.draw(SPRITES[color][ptype], x, y)
 end
 
--- win message when the winner is choosen.
-function chess:draw_win_prompt()
-    local msg = "Checkmate!"
-    local color
-    if self.winner == WHITE then
-        color = {1, 1, 1}
-    elseif self.winner == BLACK then
-        color = {0, 0, 0}
-    end
-
-    if color ~= nil then
-        G.setColor(.5, .5, .5)
-        G.rectangle('fill', SQUARE_SIZE, SQUARE_SIZE, 200, 100)
-        G.setColor(color)
-        G.print(msg, SQUARE_SIZE, SQUARE_SIZE, 0, 3, 3)
-    end
-end
-
 -- draw chess board and pieces
 function chess:draw()
     for rank = 1, 8 do
@@ -1456,8 +1399,21 @@ function chess:draw()
             end
         end
     end
+end
 
-    self:draw_win_prompt()
+-- draw move log
+function chess:draw_log()
+    local y = 0
+
+    for i = 1, #self.log, 2 do
+        local wlog = self.log[i]
+        local blog = self.log[i+1] or ""
+
+        G.print(wlog, 0, y)
+        G.print(blog, LOG_HALFWIDTH, y)
+
+        y = y + TEXT_SIZE
+    end
 end
 
 -- promotion window
@@ -1502,6 +1458,7 @@ function sel:draw()
     end
 end
 
+-- debug
 function draw_mark(pos, color)
     G.setColor(color)
     local x = fx(Pos.file(pos))
@@ -1520,7 +1477,65 @@ function draw_attackmap(map, color)
     end
 end
 
+function update_board()
+    CANVAS.board:renderTo(function ()
+        G.clear()
+        G.setColor(1, 1, 1)
+        chess:draw()
+        sel:draw()
+    end)
+
+    CANVAS.log:renderTo(function ()
+        G.clear()
+        G.setColor(1, 1, 1)
+        chess:draw_log()
+    end)
+end
+
 function love.draw()
-    G.setColor(1, 1, 1)
-    G.draw(canvas, 0, 0)
+    G.draw(CANVAS.board, BOARD_X, BOARD_Y)
+    G.draw(CANVAS.log, LOG_X, LOG_Y)
+    --G.draw(CANVAS.popup, 0, 0)
+end
+
+-- Game Functions --
+
+function reset_game()
+    chess:reset()
+    sel:reset()
+end
+
+function love.load()
+    reset_game()
+    update_board()
+end
+
+function love.quit()
+    chess:print_log() -- debug
+end
+
+function love.keypressed(key)
+    if key == 'escape' then
+        love.event.quit()
+    end
+end
+
+-- click event
+function love.mousepressed(x, y, button)
+    if button == 1 then
+        local pos = Pos.make(xf(x), yr(y))
+        if Pos.in_bound(pos) then
+            sel:click(pos)
+            update_board()
+        end
+    end
+end
+
+-- board loading function
+function love.filedropped(file)
+    file:open('r')
+    local bs, _ = file:read()
+    reset_game()
+    chess:load_fen(bs)
+    update_board()
 end
