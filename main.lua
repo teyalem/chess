@@ -112,8 +112,8 @@ ROOK = 4
 QUEEN = 5
 KING = 6
 
--- Piece symbols (for algebraic notation) and names
-PSYM = { '', 'N', 'B', 'R', 'Q', 'K' }
+-- Piece symbols (for algebraic notation and FEN) and names
+PSYM = { 'P', 'N', 'B', 'R', 'Q', 'K' }
 PSYM_REV = reverse_table(PSYM)
 PNAME = { 'pawn', 'knight', 'bishop', 'rook', 'queen', 'king' }
 
@@ -483,7 +483,8 @@ function Move.to_algebraic(m, atk_map, checked, checkmated)
     end
 
     local function format_move(p, src, dst, x, promotion)
-        local piece_symbol = PSYM[Piece.type(p)]
+        local pt = Piece.type(p)
+        local piece_symbol = pt == PAWN and '' or PSYM[pt]
 
         local samedsts = find_same_dst_sq(p, src, dst)
         local from_square = ''
@@ -1477,7 +1478,7 @@ function draw_attackmap(map, color)
     end
 end
 
-function update_board()
+function update_canvas()
     CANVAS.board:renderTo(function ()
         G.clear()
         G.setColor(1, 1, 1)
@@ -1507,7 +1508,7 @@ end
 
 function love.load()
     reset_game()
-    update_board()
+    update_canvas()
 end
 
 function love.quit()
@@ -1517,6 +1518,12 @@ end
 function love.keypressed(key)
     if key == 'escape' then
         love.event.quit()
+    -- TODO: change key
+    elseif key == 'v' and love.keyboard.isDown("lctrl", "rctrl") then
+        local fen = love.system.getClipboardText()
+        reset_game()
+        chess:load_fen(fen)
+        update_canvas()
     end
 end
 
@@ -1526,7 +1533,7 @@ function love.mousepressed(x, y, button)
         local pos = Pos.make(xf(x), yr(y))
         if Pos.in_bound(pos) then
             sel:click(pos)
-            update_board()
+            update_canvas()
         end
     end
 end
@@ -1537,5 +1544,5 @@ function love.filedropped(file)
     local bs, _ = file:read()
     reset_game()
     chess:load_fen(bs)
-    update_board()
+    update_canvas()
 end
