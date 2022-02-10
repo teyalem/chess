@@ -26,6 +26,11 @@
   + [x] implement better move generator
 - [x] refactor chess:domove and chess:is_legal
 - [x] pieces' sprites
+- [x] refactor functions to use MOVE_* enum.
+- [x] feature - load chess board from file (args or drag-and-drop)
+  + [x] also from clipboard
+- [x] add Box module for boards, attack maps, etc.
+- [x] add sprite
 
 # Future Goals:
 
@@ -39,10 +44,3 @@
 - [ ] stalemate
 - [ ] AI (maybe)
 - [ ] packaging
-
-# Small TODOs
-
-DONE: refactor functions to use MOVE_* enum.
-DONE: feature - load chess board from file (args or drag-and-drop)
-DONE: add Box module for boards, attack maps, etc.
-DONE: add sprite
