@@ -36,7 +36,6 @@ SCREEN_HEIGHT = BOARD_HEIGHT
 SEL_COLOR = {1, .3, .3}
 SEL_RADIUS = SQUARE_SIZE/2 - 4
 PROMOTION_COLOR = {.5, .5, .5}
-PROMOTION_PIECES = { KNIGHT, BISHOP, ROOK, QUEEN } -- piece to promote to
 
 -- Sprites --
 

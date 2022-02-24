@@ -139,7 +139,7 @@ FD = { [0] = 0, 0, 1, 1, 1, 0, -1, -1, -1 } -- file direction
 OPPONENT = { BLACK, WHITE } -- opponent[p] player
 BACKRANK = { 1, 8 } -- backrank[p] of player p
 HOMERANK = { 2, 7 }
-EP_RANK = { 6, 3 }
+EP_RANK = { 5, 4 }
 PAWN_DIR = { 1, 5 } -- pawns' marching direction
 
 -- Sliding pieces' directions
@@ -170,6 +170,10 @@ CASTLE_FILE = { -- fileside -> file * file
     [QUEENSIDE] = {C, D}, -- king, rook
     [KINGSIDE] = {G, F}
 }
+
+-- Promotion --
+
+PROMOTION_PIECES = { KNIGHT, BISHOP, ROOK, QUEEN } -- piece to promote to
 
 -- Board --
 -- board is array of Pieces, indexed like this:
@@ -1108,7 +1112,6 @@ function chess:domove(m)
         move(m.piece, m.src, m.dst)
 
     elseif m.t == MOVE_CASTLE then
-        -- uses hardcoded data
         local function f(f) return Sq.make(f, BACKRANK[color]) end
         local kpos = f(KING_FILE)
         local rpos = f(ROOK_FILE[m.side])
@@ -1335,7 +1338,7 @@ function sel:click(sq)
         local i = Sq.file(sq)
         local m
         if Sq.rank(sq) == 5 and 2 <= i and i <= 6 then
-            local piece = self.pieces[i-2]
+            local piece = PROMOTION_PIECES[i-2]
             m = Move.to_promotion(self.move, piece)
         else
             m = self.move -- move without promotion
@@ -1414,7 +1417,7 @@ end
 -- promotion window
 function sel:draw_promotion_ui()
     G.setColor(PROMOTION_COLOR)
-    G.rectangle('fill', fx(1), ry(5), 4*SQUARE_SIZE, SQUARE_SIZE)
+    G.rectangle('fill', fx(3), ry(5), 4*SQUARE_SIZE, SQUARE_SIZE)
 
     for f = 3, 6 do
         local p = Piece.make(chess.side, PROMOTION_PIECES[f-2])
