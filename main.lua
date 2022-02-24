@@ -1544,10 +1544,13 @@ function love.mousepressed(x, y, button)
 end
 
 -- board loading function
-function love.filedropped(file)
-    file:open('r')
-    local bs, _ = file:read()
-    reset_game()
-    chess:load_fen(bs)
-    update_canvas()
+-- NOTE: buggy in Android
+if love.system.getOS() ~= "Android" then
+    function love.filedropped(file)
+        file:open('r')
+        local bs, _ = file:read()
+        reset_game()
+        chess:load_fen(bs)
+        update_canvas()
+    end
 end
