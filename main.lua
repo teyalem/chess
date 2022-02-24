@@ -451,6 +451,11 @@ function Move.sel(m)
     error("invalid move type")
 end
 
+function Move.is_capture(m)
+    return m.t == MOVE_PIECE and m.captures
+    or m.t == MOVE_ENPASSANT
+end
+
 -- to_algebraic returns the Algebraic Notation of m.
 -- color(m) == color(atk_map)
 -- checked, checkamted: bool
@@ -650,6 +655,9 @@ function chess:find_raydir(src, dst, ignores)
     ignores = ignores or {}
     local p = self:get_piece(src)
 
+    assert(t[Piece.type(p)] ~= nil,
+        string.format("invalid piece type %d at src %s dst %s",
+        Piece.type(p), Sq.to_string(src), Sq.to_string(dst)))
     for _, d in ipairs(t[Piece.type(p)]) do
         if self:is_reachable(src, dst, d, ignores) then
             return d
@@ -734,7 +742,7 @@ function chess:is_pseudo_legal(m)
 end
 
 -- chess:is_legal(move) returns true if the move is legal.
--- FIXME: chess:find_raydir function can be replaced to cheapper
+-- FIXME: chess:find_raydir function can be replaced to cheaper
 -- chess:comp_raydir function.
 function chess:is_legal(m)
     -- legal is a subset of pseudo legal.
@@ -931,8 +939,8 @@ end
 
 -- chess:attack_map(color) generates map whose squares have attackers'
 -- positions. It is used to check if opponent king is in check or
--- absolute pinning.
-function chess:attack_map(color) -- int -> Sq.t matrix
+-- to check absolute pinning.
+function chess:attack_map(color) -- color -> Sq.t matrix
     local map = Box.init(empty)
 
     -- collect attacks
@@ -942,7 +950,7 @@ function chess:attack_map(color) -- int -> Sq.t matrix
         if Piece.color(p) == color
             and Piece.type(p) ~= KING then -- king cannot attack the other king
             for _, m in ipairs(self:legal_move(sq)) do
-                if m.t == MOVE_PIECE then
+                if Move.is_capture(m) then
                     table.insert(map[m.dst], sq)
                 end
             end
@@ -1134,13 +1142,13 @@ end
 
 -- end current side's turn
 function chess:end_turn()
-    -- update attack map
-    self.attacked[BLACK] = self:attack_map(WHITE)
-    self.attacked[WHITE] = self:attack_map(BLACK)
-
     self.dpush_file[OPPONENT[self.side]] = 0 -- clear en passant right
 
     self.side = OPPONENT[self.side]
+
+    -- update attack map
+    self.attacked[self.side] = self:attack_map(OPPONENT[self.side])
+
     if self.side == WHITE then -- turn went back to white
         self.turn = self.turn + 1
     end
