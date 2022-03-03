@@ -216,6 +216,21 @@ BCOLOR = {
 
 -- Graphical Assets --
 
+TRANSFORM = love.math.newTransform()
+
+-- Android Settings --
+if love.system.getOS() == "Android" then
+    local w = love.graphics.getWidth()
+    local h = love.graphics.getHeight()
+    local scale = 0.9 * math.min(w/SCREEN_WIDTH, h/SCREEN_HEIGHT)
+
+    local sw = scale * SCREEN_WIDTH
+    local sh = scale * SCREEN_HEIGHT
+    local wd = (w - sw) / 2
+    local hd = (h - sh) / 2
+    TRANSFORM = love.math.newTransform(wd, hd, 0, scale)
+end
+
 -- load sprites
 SPRITES = { [WHITE] = {}, [BLACK] = {} }
 for color, cname in ipairs(COLOR_NAME) do
@@ -231,8 +246,8 @@ love.graphics.setFont(FONT)
 
 -- screen canvases
 CANVAS = {
-    board = love.graphics.newCanvas(),
-    log = love.graphics.newCanvas(),
+    board = love.graphics.newCanvas(BOARD_WIDTH, BOARD_HEIGHT),
+    log = love.graphics.newCanvas(LOG_WIDTH, LOG_HEIGHT),
 }
 
 -- Utility functions --
@@ -1499,9 +1514,12 @@ function update_canvas()
 end
 
 function love.draw()
+    G.push()
+    G.applyTransform(TRANSFORM)
     G.draw(CANVAS.board, BOARD_X, BOARD_Y)
     G.draw(CANVAS.log, LOG_X, LOG_Y)
     --G.draw(CANVAS.popup, 0, 0)
+    G.pop()
 end
 
 -- Game Functions --
@@ -1517,7 +1535,7 @@ function love.load()
 end
 
 function love.quit()
-    chess:print_log() -- debug
+    if DEBUG then chess:print_log() end
 end
 
 function love.keypressed(key)
@@ -1535,6 +1553,7 @@ end
 -- click event
 function love.mousepressed(x, y, button)
     if button == 1 then
+        local x, y = TRANSFORM:inverseTransformPoint(x, y)
         local sq = Sq.make(xf(x), yr(y))
         if Sq.in_bound(sq) then
             sel:click(sq)
