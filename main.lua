@@ -1,6 +1,6 @@
 -- Naming Conventions --
 -- 1. Global const variables are in CONSTANT_CASE.
--- 2. Module names are in CamelCase.
+-- 2. Module names are in PascalCase.
 -- 3. function names are in snake_case.
 
 -- print debug infos?
@@ -96,7 +96,7 @@ function reverse_table(t)
     return o
 end
 
--- CONSTS --
+-- CONSTS & ENUMS --
 
 -- Colors
 WHITE = 1
@@ -117,7 +117,7 @@ PSYM = { 'P', 'N', 'B', 'R', 'Q', 'K' }
 PSYM_REV = reverse_table(PSYM)
 PNAME = { 'pawn', 'knight', 'bishop', 'rook', 'queen', 'king' }
 
--- Files --
+-- Files
 A = 1
 B = 2
 C = 3
@@ -135,7 +135,8 @@ FILE_REV = reverse_table(FILE)
 RD = { [0] = 0, 1, 1, 0, -1, -1, -1, 0, 1 } -- row direction
 FD = { [0] = 0, 0, 1, 1, 1, 0, -1, -1, -1 } -- file direction
 
--- order: white, black
+-- misc data
+-- type: (color, 'a) table
 OPPONENT = { BLACK, WHITE } -- opponent[p] player
 BACKRANK = { 1, 8 } -- backrank[p] of player p
 HOMERANK = { 2, 7 }
@@ -222,6 +223,7 @@ TRANSFORM = love.math.newTransform()
 if love.system.getOS() == "Android" then
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
+    -- make window little smaller to avoid status bar
     local scale = 0.9 * math.min(w/SCREEN_WIDTH, h/SCREEN_HEIGHT)
 
     local sw = scale * SCREEN_WIDTH
@@ -246,6 +248,7 @@ love.graphics.setFont(FONT)
 
 -- screen canvases
 CANVAS = {
+    -- NOTE: always create canvas with dimension to prevent clipping
     board = love.graphics.newCanvas(BOARD_WIDTH, BOARD_HEIGHT),
     log = love.graphics.newCanvas(LOG_WIDTH, LOG_HEIGHT),
 }
@@ -257,6 +260,7 @@ function log(...)
     if DEBUG then print(...) end
 end
 
+-- below two functions are for chess:load_fen.
 function is_uppercase(c)
     return 'A' <= c and c <= 'Z'
 end
@@ -273,15 +277,8 @@ function Sq.is_sq(p)
     return type(p) == "table" and p._t == 'sq'
 end
 
-function Sq.rank(p)
-    assert(Sq.is_sq(p), string.format("invalid type %s", type(p)))
-    return p.rank
-end
-
-function Sq.file(p)
-    assert(Sq.is_sq(p), string.format("invalid type %s", type(p)))
-    return p.file
-end
+function Sq.rank(p) return p.rank end
+function Sq.file(p) return p.file end
 
 function Sq.equals(a, b)
     return Sq.rank(a) == Sq.rank(b) and Sq.file(a) == Sq.file(b)
@@ -468,7 +465,7 @@ end
 
 function Move.is_capture(m)
     return m.t == MOVE_PIECE and m.captures
-    or m.t == MOVE_ENPASSANT
+    or m.t == MOVE_ENPASSANT -- en passant implies capture
 end
 
 -- to_algebraic returns the Algebraic Notation of m.
@@ -578,6 +575,7 @@ function Box.init(f)
 end
 
 -- Chess --
+-- complete state of a game
 
 chess = {}
 
@@ -586,23 +584,14 @@ function chess:reset()
     -- set initial turn and side
     self.turn = 1; self.side = WHITE
 
-    -- board and position of king
-    local function make_board(colors, pieces)
-        local b = Box.make(Piece.none)
-        for i, s in ipairs(colors) do
-            rawset(b, i, Piece.make(s, pieces[i]))
-        end
-        return b
-    end
-
     self.board = Box.init(function (i)
         return Piece.make(BCOLOR[i], BCLASS[i])
     end)
     self.king_pos = { Sq.make(E, 1), Sq.make(E, 8) }
 
-    -- rights
+    -- castling rights [color][fileside]
     self.castling_right = { {true, true}, {true, true} }
-    self.dpush_file = {0, 0} -- double push file
+    self.dpush_file = {0, 0} -- double push file; 0 is none
 
     self.captured = {} -- captured pieces
     self.log = {} -- move log
@@ -612,7 +601,6 @@ function chess:reset()
 end
 
 function chess:get_piece(sq)
-    assert(Sq.in_bound(sq))
     return self.board[sq]
 end
 
@@ -670,9 +658,6 @@ function chess:find_raydir(src, dst, ignores)
     ignores = ignores or {}
     local p = self:get_piece(src)
 
-    assert(t[Piece.type(p)] ~= nil,
-        string.format("invalid piece type %d at src %s dst %s",
-        Piece.type(p), Sq.to_string(src), Sq.to_string(dst)))
     for _, d in ipairs(t[Piece.type(p)]) do
         if self:is_reachable(src, dst, d, ignores) then
             return d
@@ -1374,9 +1359,9 @@ end
 
 -- Drawing Functions --
 
-local G = love.graphics
+local G = love.graphics -- short alias
 
--- draw a square of board
+-- draw square of board
 function draw_square(rank, file, color)
     local x = fx(file)
     local y = ry(rank)
@@ -1389,7 +1374,7 @@ function draw_square(rank, file, color)
     G.rectangle('fill', x, y, s, s)
 end
 
--- draw a piece p at (x, y)
+-- draw piece p at (x, y)
 function Piece.draw(x, y, p)
     x = x + SPRITE_POS
     y = y + SPRITE_POS
@@ -1480,20 +1465,16 @@ function sel:draw()
 end
 
 -- debug
-function draw_mark(sq, color)
-    G.setColor(color)
-    local x = fx(Sq.file(sq))
-    local y = ry(Sq.rank(sq))
-
-    G.circle('fill', mid(x), mid(y), 5)
-end
-
--- debug
 function draw_attackmap(map, color)
     local c = {{ .8, .5, .5 }, {.5, .8, .5}}
     for i, ms in ipairs(map) do
         if #ms > 0 then
-            draw_mark(sq(i), c[color])
+            local s = sq(i)
+            local x = fx(Sq.file(s))
+            local y = ry(Sq.rank(s))
+
+            G.setColor(c[color])
+            G.circle('fill', mid(x), mid(y), 5)
         end
     end
 end
@@ -1539,10 +1520,10 @@ function love.quit()
 end
 
 function love.keypressed(key)
-    if key == 'escape' then
+    if key == 'escape' then -- ESC to quit
         love.event.quit()
-    -- TODO: change key
     elseif key == 'v' and love.keyboard.isDown("lctrl", "rctrl") then
+    -- Ctrl-v to paste FEN
         local fen = love.system.getClipboardText()
         reset_game()
         chess:load_fen(fen)
