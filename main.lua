@@ -280,6 +280,16 @@ end
 function Sq.rank(p) return p.rank end
 function Sq.file(p) return p.file end
 
+function in_board(f, r)
+    return (1 <= r and r <= 8) and (A <= f and f <= H)
+end
+
+function Sq.in_board(p)
+    local f = Sq.file(p)
+    local r = Sq.rank(p)
+    return in_board(f, r)
+end
+
 function Sq.equals(a, b)
     return Sq.rank(a) == Sq.rank(b) and Sq.file(a) == Sq.file(b)
 end
@@ -298,12 +308,6 @@ end
 
 function Sq.slide(p, d, i)
     return Sq.advance(p, i*FD[d], i*RD[d])
-end
-
-function Sq.in_bound(p)
-    local r = Sq.rank(p)
-    local f = Sq.file(p)
-    return (1 <= r and r <= 8) and (A <= f and f <= H)
 end
 
 function Sq.fileside(p)
@@ -638,7 +642,7 @@ end
 function chess:is_reachable(src, dst, dir, ignores)
     for i = 1, 7 do
         local sq = Sq.slide(src, dir, i)
-        if not Sq.in_bound(sq) then break end
+        if not Sq.in_board(sq) then break end
 
         if sq == dst then
             return true
@@ -832,7 +836,7 @@ function chess:raycast(ms, p, src, dir)
 
     for i = 1, 7 do
         local sq = Sq.slide(src, dir, i)
-        if not Sq.in_bound(sq) then break end
+        if not Sq.in_board(sq) then break end
 
         local m = Move.normal(p, src, sq, self:can_capture(sq, color))
         ms[#ms+1] = m
@@ -854,7 +858,7 @@ function chess:pawn_move(p, src)
     for _, fd in ipairs{-1, 1} do
         local dst = Sq.advance(src, fd, RD[PAWN_DIR[color]])
 
-        if Sq.in_bound(dst) then
+        if Sq.in_board(dst) then
             -- move by capture
             ms[#ms+1] = Move.normal(p, src, dst, true)
 
@@ -872,7 +876,7 @@ function chess:knight_move(p, src)
     local ms = {}
 
     local function add(dst)
-        if Sq.in_bound(dst) then
+        if Sq.in_board(dst) then
             ms[#ms+1] = Move.normal(p, src, dst, self:can_capture(dst, color))
         end
     end
@@ -904,7 +908,7 @@ function chess:king_move(p, src)
 
     for i = 1, 8 do
         local dst = Sq.advance(src, FD[i], RD[i])
-        if Sq.in_bound(dst) then
+        if Sq.in_board(dst) then
             local m = Move.normal(p, src, dst, self:can_capture(dst, color))
             ms[#ms+1] = m
         end
@@ -965,7 +969,7 @@ end
 function chess:pawn_def(p, sq)
     local r = RD[PAWN_DIR[Piece.color(p)]]
     local ps = map(function (f) return Sq.advance(sq, f, r) end, { -1, 1 })
-    return filter(Sq.in_bound, ps)
+    return filter(Sq.in_board, ps)
 end
 
 function chess:knight_def(p, sq)
@@ -974,13 +978,13 @@ function chess:knight_def(p, sq)
         ps[#ps+1] = Sq.advance(sq, 2*FD[i], RD[i])
         ps[#ps+1] = Sq.advance(sq, FD[i], 2*RD[i])
     end
-    return filter(Sq.in_bound, ps)
+    return filter(Sq.in_board, ps)
 end
 
 function chess:ray_def(ps, color, sq, dir)
     for i = 1, 7 do
         local sq = Sq.slide(sq, dir, i)
-        if Sq.in_bound(sq)
+        if Sq.in_board(sq)
             and (self:is_empty(sq) or self:get_color(sq) == color) then
             ps[#ps+1] = sq
         else
@@ -1009,7 +1013,7 @@ function chess:king_def(p, sq)
     for d = 1, 8 do
         ps[#ps+1] = Sq.slide(sq, d, 1)
     end
-    return filter(Sq.in_bound, ps)
+    return filter(Sq.in_board, ps)
 end
 
 chess.defs = {
@@ -1536,7 +1540,7 @@ function love.mousepressed(x, y, button)
     if button == 1 then
         local x, y = TRANSFORM:inverseTransformPoint(x, y)
         local sq = Sq.make(xf(x), yr(y))
-        if Sq.in_bound(sq) then
+        if Sq.in_board(sq) then
             sel:click(sq)
             update_canvas()
         end
