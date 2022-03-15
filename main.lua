@@ -301,6 +301,7 @@ end
 
 Sq.mt = { __eq = Sq.equals }
 
+-- make square position on file f, row r.
 function Sq.make(f, r)
     local p = { _t = 'sq', file = f, rank = r }
     setmetatable(p, Sq.mt)
@@ -328,26 +329,17 @@ function Sq.to_string(p)
     return string.format("%s%d", FILE[Sq.file(p)], Sq.rank(p))
 end
 
--- test AC = nBC.
+-- check given point a, b, c form a line segment.
 function Sq.is_lined(a, b, c)
-    local function sub(a, b)
-        return Sq.make(
-            Sq.file(a) - Sq.file(b),
-            Sq.rank(a) - Sq.rank(b))
+    local function f(v)
+        return Sq.file(b) - Sq.file(v), Sq.rank(b) - Sq.rank(v)
     end
 
-    local function dot(a, b)
-        return Sq.file(a) * Sq.file(b) + Sq.rank(a) * Sq.rank(b)
-    end
+    local ax, ay = f(a)
+    local bx, by = f(c)
 
-    local function l(a)
-        return math.sqrt(dot(a, a))
-    end
-
-    local ca = sub(a, c)
-    local cb = sub(b, c)
-
-    return dot(ca, cb) == l(ca) * l(cb)
+    return ax*by - ay*bx == 0
+    and math.abs(bx-ax+by-ay) > math.abs(bx+by)
 end
 
 -- square to table index
