@@ -359,10 +359,13 @@ end
 Piece = {}
 
 function Piece.make(c, t)
-    return {
-        color = c,
-        t = t,
-    }
+    if t == NONE
+        or ((c == WHITE or c == BLACK)
+            and (PAWN <= t and t <= KING)) then
+        return { color = c, t = t }
+    else
+        error(string.format("Piece.make: not a valid piece: %d %d", c, t))
+    end
 end
 
 -- nothing
