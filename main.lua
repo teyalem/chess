@@ -260,6 +260,11 @@ function log(...)
     if DEBUG then print(...) end
 end
 
+local lua_assert = _G["assert"]
+function assert(...)
+    if DEBUG then lua_assert(...) end
+end
+
 -- below two functions are for chess:load_fen.
 function is_uppercase(c)
     return 'A' <= c and c <= 'Z'
