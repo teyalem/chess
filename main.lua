@@ -578,6 +578,17 @@ function Box.init(f)
     return b
 end
 
+function Box.squares(b)
+    local function gen()
+        for i = 1, 64 do
+            local s = sq(i)
+            coroutine.yield(s, b[s])
+        end
+    end
+
+    return coroutine.wrap(gen)
+end
+
 -- Chess --
 -- complete state of a game
 
@@ -628,9 +639,9 @@ end
 function chess:collect_squares(color, ptypes)
     local out = {}
 
-    for i, p in ipairs(self.board) do
+    for sq, p in Box.squares(self.board) do
         if Piece.color(p) == color and mem(Piece.type(p), ptypes) then
-            out[#out+1] = sq(i)
+            out[#out+1] = sq
         end
     end
 
@@ -948,9 +959,7 @@ function chess:attack_map(color) -- color -> Sq.t matrix
     local map = Box.init(empty)
 
     -- collect attacks
-    for i, p in ipairs(self.board) do
-        local sq = sq(i)
-
+    for sq, p in Box.squares(self.board) do
         if Piece.color(p) == color
             and Piece.type(p) ~= KING then -- king cannot attack the other king
             for _, m in ipairs(self:legal_move(sq)) do
