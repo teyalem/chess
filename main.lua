@@ -602,7 +602,7 @@ function chess:reset()
     self.board = Box.init(function (i)
         return Piece.make(BCOLOR[i], BCLASS[i])
     end)
-    self.king_pos = { Sq.make(E, 1), Sq.make(E, 8) }
+    self.king_pos = { Sq.make(KING_FILE, 1), Sq.make(KING_FILE, 8) }
 
     -- castling rights [color][fileside]
     self.castling_right = { {true, true}, {true, true} }
