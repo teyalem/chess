@@ -1,4 +1,22 @@
-# Major Goals: (not being done this way)
+# TODOS
+
+## now
+
+- [ ] refactoring
+    + [ ] split main.lua
+    + [ ] objectify structs
+    + [ ] standard way to mark objects
+
+## Future Goals
+
+- [ ] stalemate
+- [ ] map rotation
+- [ ] UI rework
+- [ ] Sprite rework (black should be darker)
+- [ ] AI (maybe)
+- [ ] ~~packaging (trivial thing)~~
+
+# (Old) Major Goals: (not being done this way)
 
 - [x] draw board
 - [x] move pieces
@@ -31,16 +49,3 @@
   + [x] also from clipboard
 - [x] add Box module for boards, attack maps, etc.
 - [x] add sprite
-
-# Future Goals:
-
-- [ ] UI rework
-  + [ ] screen size
-  + [ ] window (checkmate/promotion)
-  + [ ] menus
-  + [ ] resizing
-- [ ] Sprite rework (black should be darker)
-- [ ] map rotation
-- [ ] stalemate
-- [ ] AI (maybe)
-- [ ] packaging
